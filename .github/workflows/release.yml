@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: none
+          coverage: none
+
+      - name: Install PHPUnit
+        run: |
+          curl -L -o /tmp/phpunit.phar https://phar.phpunit.de/phpunit-11.phar
+
+      - name: Run tests
+        run: php /tmp/phpunit.phar -c phpunit.xml.dist
+
+      - name: Build plugin zip
+        run: |
+          mkdir -p dist/atum-mailer
+          rsync -av ./ dist/atum-mailer/ \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '.DS_Store' \
+            --exclude '.phpunit.result.cache' \
+            --exclude 'tests' \
+            --exclude 'dist' \
+            --exclude 'phpunit.xml.dist'
+          (cd dist && zip -r atum-mailer.zip atum-mailer)
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/atum-mailer.zip
+          generate_release_notes: true
