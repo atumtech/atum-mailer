@@ -152,6 +152,23 @@ final class GitHubUpdaterTest extends TestCase {
 		$this->assertArrayNotHasKey( 'headers', $args );
 	}
 
+	public function test_token_auth_headers_are_not_added_for_lookalike_urls(): void {
+		add_filter(
+			'atum_mailer_github_token',
+			static function () {
+				return 'ghs_testtoken';
+			}
+		);
+
+		$updater = new Atum_Mailer_GitHub_Updater( ATUM_MAILER_FILE, '0.6.0' );
+		$args    = $updater->add_http_headers(
+			array(),
+			'https://evil.example/?next=https://api.github.com/repos/atum/atum-mailer/releases/latest'
+		);
+
+		$this->assertArrayNotHasKey( 'headers', $args );
+	}
+
 	public function test_private_asset_api_url_is_used_when_token_present(): void {
 		add_filter(
 			'atum_mailer_github_token',
@@ -190,6 +207,102 @@ final class GitHubUpdaterTest extends TestCase {
 		$result = $updater->inject_update( $transient );
 		$this->assertSame(
 			'https://api.github.com/repos/atum/atum-mailer/releases/assets/12345',
+			$result->response['atum-mailer.php']->package
+		);
+	}
+
+	public function test_inject_update_ignores_untrusted_package_host(): void {
+		$updater = new Atum_Mailer_GitHub_Updater( ATUM_MAILER_FILE, '0.6.0' );
+
+		atum_test_push_http_response(
+			'GET',
+			array(
+				'response' => array( 'code' => 200 ),
+				'body'     => wp_json_encode(
+					array(
+						'tag_name' => 'v0.9.0',
+						'html_url' => 'https://github.com/atum/atum-mailer/releases/tag/v0.9.0',
+						'assets'   => array(
+							array(
+								'name'                 => 'atum-mailer.zip',
+								'browser_download_url' => 'https://evil.example/atum-mailer.zip',
+							),
+						),
+					)
+				),
+			)
+		);
+
+		$transient = (object) array(
+			'checked'  => array( 'atum-mailer.php' => '0.6.0' ),
+			'response' => array(),
+			'no_update'=> array(),
+		);
+
+		$result = $updater->inject_update( $transient );
+		$this->assertArrayNotHasKey( 'atum-mailer.php', $result->response );
+	}
+
+	public function test_inject_update_rejects_package_url_for_different_repository_path(): void {
+		$updater = new Atum_Mailer_GitHub_Updater( ATUM_MAILER_FILE, '0.6.0' );
+
+		atum_test_push_http_response(
+			'GET',
+			array(
+				'response' => array( 'code' => 200 ),
+				'body'     => wp_json_encode(
+					array(
+						'tag_name' => 'v0.9.1',
+						'html_url' => 'https://github.com/atum/atum-mailer/releases/tag/v0.9.1',
+						'assets'   => array(
+							array(
+								'name'                 => 'atum-mailer.zip',
+								'browser_download_url' => 'https://github.com/example/other-plugin/releases/download/v0.9.1/atum-mailer.zip',
+							),
+						),
+					)
+				),
+			)
+		);
+
+		$transient = (object) array(
+			'checked'  => array( 'atum-mailer.php' => '0.6.0' ),
+			'response' => array(),
+			'no_update'=> array(),
+		);
+
+		$result = $updater->inject_update( $transient );
+		$this->assertArrayNotHasKey( 'atum-mailer.php', $result->response );
+	}
+
+	public function test_inject_update_accepts_repo_scoped_zipball_url(): void {
+		$updater = new Atum_Mailer_GitHub_Updater( ATUM_MAILER_FILE, '0.6.0' );
+
+		atum_test_push_http_response(
+			'GET',
+			array(
+				'response' => array( 'code' => 200 ),
+				'body'     => wp_json_encode(
+					array(
+						'tag_name'    => 'v0.9.2',
+						'html_url'    => 'https://github.com/atum/atum-mailer/releases/tag/v0.9.2',
+						'zipball_url' => 'https://api.github.com/repos/atum/atum-mailer/zipball/v0.9.2',
+						'assets'      => array(),
+					)
+				),
+			)
+		);
+
+		$transient = (object) array(
+			'checked'  => array( 'atum-mailer.php' => '0.6.0' ),
+			'response' => array(),
+			'no_update'=> array(),
+		);
+
+		$result = $updater->inject_update( $transient );
+		$this->assertArrayHasKey( 'atum-mailer.php', $result->response );
+		$this->assertSame(
+			'https://api.github.com/repos/atum/atum-mailer/zipball/v0.9.2',
 			$result->response['atum-mailer.php']->package
 		);
 	}

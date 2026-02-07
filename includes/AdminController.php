@@ -166,14 +166,17 @@ class Atum_Mailer_Admin_Controller {
 		add_settings_field( 'mail_retention', __( 'Store Delivery Logs', 'atum-mailer' ), array( $this, 'render_mail_retention_field' ), 'atum-mailer-settings', 'atum_mailer_retention' );
 		add_settings_field( 'retention_days', __( 'Retention Window (days)', 'atum-mailer' ), array( $this, 'render_retention_days_field' ), 'atum-mailer-settings', 'atum_mailer_retention' );
 
-		add_settings_section(
-			'atum_mailer_webhooks',
-			__( 'Webhooks', 'atum-mailer' ),
-			array( $this, 'render_webhook_section_help' ),
-			'atum-mailer-settings'
-		);
-		add_settings_field( 'postmark_webhook_secret', __( 'Webhook Shared Secret', 'atum-mailer' ), array( $this, 'render_postmark_webhook_secret_field' ), 'atum-mailer-settings', 'atum_mailer_webhooks' );
-	}
+			add_settings_section(
+				'atum_mailer_webhooks',
+				__( 'Webhooks', 'atum-mailer' ),
+				array( $this, 'render_webhook_section_help' ),
+				'atum-mailer-settings'
+			);
+			add_settings_field( 'postmark_webhook_secret', __( 'Webhook Shared Secret', 'atum-mailer' ), array( $this, 'render_postmark_webhook_secret_field' ), 'atum-mailer-settings', 'atum_mailer_webhooks' );
+			add_settings_field( 'webhook_require_signature', __( 'Require Signature Verification', 'atum-mailer' ), array( $this, 'render_webhook_require_signature_field' ), 'atum-mailer-settings', 'atum_mailer_webhooks' );
+			add_settings_field( 'webhook_replay_window_seconds', __( 'Webhook Replay Window (s)', 'atum-mailer' ), array( $this, 'render_webhook_replay_window_field' ), 'atum-mailer-settings', 'atum_mailer_webhooks' );
+			add_settings_field( 'webhook_rate_limit_per_minute', __( 'Webhook Rate Limit (/min/IP)', 'atum-mailer' ), array( $this, 'render_webhook_rate_limit_field' ), 'atum-mailer-settings', 'atum_mailer_webhooks' );
+		}
 
 	/**
 	 * Enqueue admin assets.
@@ -217,6 +220,11 @@ class Atum_Mailer_Admin_Controller {
 					'removeRecipient'    => __( 'Remove recipient', 'atum-mailer' ),
 					'selectLogsRequired' => __( 'Select at least one log entry first.', 'atum-mailer' ),
 					'confirmPurgeFiltered'=> __( 'Purge all logs matching current filters?', 'atum-mailer' ),
+					'confirmPurgeFilteredTitle' => __( 'Purge Filtered Logs?', 'atum-mailer' ),
+					'confirmPurgeButton' => __( 'Purge Logs', 'atum-mailer' ),
+					'selectedLogsLabel'  => __( '%d selected', 'atum-mailer' ),
+					'dangerCancel'       => __( 'Cancel', 'atum-mailer' ),
+					'dangerConfirm'      => __( 'Confirm', 'atum-mailer' ),
 				),
 				'tokenRevealAllowed' => ! empty( $options['allow_token_reveal'] ) ? 1 : 0,
 			)
@@ -700,6 +708,33 @@ class Atum_Mailer_Admin_Controller {
 			wp_send_json_error( array( 'message' => __( 'Log not found.', 'atum-mailer' ) ), 404 );
 		}
 
+		$message         = (string) $log->message;
+		$headers         = $this->pretty_json_string( $log->headers );
+		$attachments     = $this->pretty_json_string( $log->attachments );
+		$request_payload = $this->pretty_json_string( $log->request_payload );
+		$response_body   = $this->pretty_json_string( $log->response_body );
+		$options         = $this->settings->get_options();
+		$is_full_detail  = 'full' === sanitize_key( (string) ( $options['log_detail_mode'] ?? 'metadata' ) );
+
+		if ( ! $is_full_detail ) {
+			$payload_hint = __( 'Payload details are not stored in metadata mode. Set Log Detail Mode to "Full payload/body" to capture raw payloads.', 'atum-mailer' );
+			if ( '' === $message ) {
+				$message = __( 'Message body not stored in metadata mode.', 'atum-mailer' );
+			}
+			if ( '' === $headers ) {
+				$headers = __( 'Headers not stored in metadata mode.', 'atum-mailer' );
+			}
+			if ( '' === $attachments ) {
+				$attachments = __( 'Attachments not stored in metadata mode.', 'atum-mailer' );
+			}
+			if ( '' === $request_payload ) {
+				$request_payload = $payload_hint;
+			}
+			if ( '' === $response_body ) {
+				$response_body = __( 'Provider response body not stored for this log entry.', 'atum-mailer' );
+			}
+		}
+
 		$data = array(
 			'id'                  => (int) $log->id,
 			'created_at'          => (string) $log->created_at,
@@ -716,11 +751,11 @@ class Atum_Mailer_Admin_Controller {
 			'http_status'         => (string) ( $log->http_status ?? '' ),
 			'error_message'       => (string) $log->error_message,
 			'recipient_csv'       => $this->recipients_csv_from_mail_to( (string) $log->mail_to ),
-			'message'             => (string) $log->message,
-			'headers'             => $this->pretty_json_string( $log->headers ),
-			'attachments'         => $this->pretty_json_string( $log->attachments ),
-			'request_payload'     => $this->pretty_json_string( $log->request_payload ),
-			'response_body'       => $this->pretty_json_string( $log->response_body ),
+			'message'             => $message,
+			'headers'             => $headers,
+			'attachments'         => $attachments,
+			'request_payload'     => $request_payload,
+			'response_body'       => $response_body,
 			'webhook_event_type'  => $this->webhook_event_label( (string) $log->webhook_event_type ),
 			'timeline'            => $this->build_log_timeline( $log ),
 		);
@@ -1187,6 +1222,7 @@ class Atum_Mailer_Admin_Controller {
 	 */
 	private function build_setup_readiness( $options ) {
 		$last_test = (string) get_option( Atum_Mailer_Settings_Repository::LAST_TEST_EMAIL_OPTION, '' );
+		$dns_check = $this->build_postmark_dns_check();
 
 		$steps = array(
 			array(
@@ -1230,6 +1266,14 @@ class Atum_Mailer_Admin_Controller {
 				'required'    => false,
 				'url'         => $this->admin_tab_url( 'settings', 'atum-field-webhook-secret' ),
 				'action_label'=> __( 'Open Webhook Settings', 'atum-mailer' ),
+			),
+			array(
+				'title'       => __( 'Check domain DNS', 'atum-mailer' ),
+				'description' => (string) $dns_check['description'],
+				'done'        => ! empty( $dns_check['done'] ),
+				'required'    => false,
+				'url'         => $this->admin_tab_url( 'settings', 'atum-field-from-email' ),
+				'action_label'=> __( 'Open Sender Settings', 'atum-mailer' ),
 			),
 		);
 
@@ -1284,6 +1328,177 @@ class Atum_Mailer_Admin_Controller {
 			'primary_action_label'=> is_array( $next_pending ) ? (string) ( $next_pending['action_label'] ?? '' ) : '',
 			'steps'               => $steps,
 		);
+	}
+
+	/**
+	 * Build Postmark DNS verification summary for current site domain.
+	 *
+	 * @return array{done: bool, description: string}
+	 */
+	private function build_postmark_dns_check() {
+		$domain = $this->resolve_site_domain_for_dns_check();
+		if ( '' === $domain ) {
+			return array(
+				'done'        => false,
+				'description' => __( 'Unable to determine the current site domain for DNS checks.', 'atum-mailer' ),
+			);
+		}
+
+		$spf_pass        = false;
+		$dkim_pass       = false;
+		$dmarc_pass      = false;
+		$return_path_pass = false;
+
+		$root_txt_records = $this->lookup_dns_records( $domain, 'TXT' );
+		foreach ( $root_txt_records as $record ) {
+			$value = $this->normalize_dns_txt_record( $record );
+			if ( '' === $value ) {
+				continue;
+			}
+
+			if ( 0 === strpos( $value, 'v=spf1' ) && false !== strpos( $value, 'include:spf.mtasv.net' ) ) {
+				$spf_pass = true;
+				break;
+			}
+		}
+
+		$dkim_records = $this->lookup_dns_records( 'pm._domainkey.' . $domain, 'TXT' );
+		foreach ( $dkim_records as $record ) {
+			$value = $this->normalize_dns_txt_record( $record );
+			if ( '' === $value ) {
+				continue;
+			}
+
+			if ( false !== strpos( $value, 'v=dkim1' ) && false !== strpos( $value, 'p=' ) ) {
+				$dkim_pass = true;
+				break;
+			}
+		}
+
+		$dmarc_records = $this->lookup_dns_records( '_dmarc.' . $domain, 'TXT' );
+		foreach ( $dmarc_records as $record ) {
+			$value = $this->normalize_dns_txt_record( $record );
+			if ( 0 === strpos( $value, 'v=dmarc1' ) ) {
+				$dmarc_pass = true;
+				break;
+			}
+		}
+
+		$return_path_records = $this->lookup_dns_records( 'pm-bounces.' . $domain, 'CNAME' );
+		foreach ( $return_path_records as $record ) {
+			$target = strtolower( trim( (string) ( $record['target'] ?? '' ), " \t\n\r\0\x0B." ) );
+			if ( '' !== $target && false !== strpos( $target, 'pm.mtasv.net' ) ) {
+				$return_path_pass = true;
+				break;
+			}
+		}
+
+		$status_found   = __( 'Found', 'atum-mailer' );
+		$status_missing = __( 'Missing', 'atum-mailer' );
+		$description    = sprintf(
+			/* translators: 1: domain, 2: SPF status, 3: DKIM status, 4: DMARC status, 5: return-path status */
+			__( 'Domain %1$s checks: SPF: %2$s, DKIM (pm._domainkey): %3$s, DMARC: %4$s, Return-Path (pm-bounces): %5$s.', 'atum-mailer' ),
+			$domain,
+			$spf_pass ? $status_found : $status_missing,
+			$dkim_pass ? $status_found : $status_missing,
+			$dmarc_pass ? $status_found : $status_missing,
+			$return_path_pass ? $status_found : $status_missing
+		);
+
+		return array(
+			'done'        => $spf_pass && $dkim_pass,
+			'description' => $description,
+		);
+	}
+
+	/**
+	 * Resolve the current site domain for DNS checks.
+	 *
+	 * @return string
+	 */
+	private function resolve_site_domain_for_dns_check() {
+		$host = strtolower( trim( (string) wp_parse_url( home_url( '/' ), PHP_URL_HOST ), " \t\n\r\0\x0B." ) );
+		if ( '' === $host ) {
+			return '';
+		}
+
+		if ( 0 === strpos( $host, 'www.' ) ) {
+			$host = substr( $host, 4 );
+		}
+
+		return $host;
+	}
+
+	/**
+	 * Lookup DNS records with optional filter override for tests/integrations.
+	 *
+	 * @param string $host Hostname to query.
+	 * @param string $type Supported values: TXT|CNAME.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function lookup_dns_records( $host, $type ) {
+		$host = strtolower( trim( (string) $host, " \t\n\r\0\x0B." ) );
+		$type = strtoupper( sanitize_key( (string) $type ) );
+		if ( '' === $host || '' === $type ) {
+			return array();
+		}
+
+		$filtered = apply_filters( 'atum_mailer_dns_records_lookup', null, $host, $type );
+		if ( is_array( $filtered ) ) {
+			return $filtered;
+		}
+
+		if ( ! function_exists( 'dns_get_record' ) ) {
+			return array();
+		}
+
+		$dns_type = null;
+		if ( 'TXT' === $type && defined( 'DNS_TXT' ) ) {
+			$dns_type = DNS_TXT;
+		} elseif ( 'CNAME' === $type && defined( 'DNS_CNAME' ) ) {
+			$dns_type = DNS_CNAME;
+		}
+
+		if ( null === $dns_type ) {
+			return array();
+		}
+
+		$records = null;
+		set_error_handler(
+			static function () {
+				return true;
+			}
+		);
+		$records = dns_get_record( $host, $dns_type );
+		restore_error_handler();
+
+		return is_array( $records ) ? $records : array();
+	}
+
+	/**
+	 * Normalize one DNS TXT record payload.
+	 *
+	 * @param array<string, mixed> $record Raw record payload.
+	 * @return string
+	 */
+	private function normalize_dns_txt_record( $record ) {
+		if ( ! is_array( $record ) ) {
+			return '';
+		}
+
+		if ( isset( $record['txt'] ) ) {
+			return strtolower( trim( (string) $record['txt'] ) );
+		}
+
+		if ( isset( $record['entries'] ) && is_array( $record['entries'] ) ) {
+			$parts = array();
+			foreach ( $record['entries'] as $entry ) {
+				$parts[] = (string) $entry;
+			}
+			return strtolower( trim( implode( '', $parts ) ) );
+		}
+
+		return '';
 	}
 
 	/**
@@ -1420,6 +1635,7 @@ class Atum_Mailer_Admin_Controller {
 		$total    = (int) $results['total'];
 		$logs     = is_array( $results['logs'] ) ? $results['logs'] : array();
 		$pages    = max( 1, (int) ceil( $total / $per_page ) );
+		$options  = $this->settings->get_options();
 		$allowed_statuses = $this->allowed_statuses();
 		$visible_start    = $total > 0 ? $offset + 1 : 0;
 		$visible_end      = $total > 0 ? min( $offset + count( $logs ), $total ) : 0;
@@ -1445,6 +1661,12 @@ class Atum_Mailer_Admin_Controller {
 		if ( '' !== (string) $filters['s'] ) {
 			$active_filter_count++;
 		}
+		$retention_days      = max( 1, (int) ( $options['retention_days'] ?? 90 ) );
+		$purge_confirmation  = sprintf(
+			/* translators: %d retention days */
+			__( 'This will permanently delete logs older than %d days. This action cannot be undone.', 'atum-mailer' ),
+			$retention_days
+		);
 		?>
 		<section class="atum-card atum-card--full atum-logs-shell">
 			<div class="atum-logs-shell__header">
@@ -1453,13 +1675,17 @@ class Atum_Mailer_Admin_Controller {
 					<p><?php esc_html_e( 'Search, triage, replay, and export delivery events.', 'atum-mailer' ); ?></p>
 				</div>
 				<div class="atum-logs-shell__actions">
+					<button type="button" class="button button-secondary atum-logs-shell__filter-toggle" data-atum-log-filter-toggle="1" aria-expanded="false" aria-controls="atum-logs-filter-panel">
+						<?php esc_html_e( 'Filters', 'atum-mailer' ); ?>
+						<span class="atum-logs-shell__filter-count"><?php echo esc_html( (string) $active_filter_count ); ?></span>
+					</button>
 					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="atum-logs-shell__action">
 						<?php wp_nonce_field( 'atum_mailer_export_logs' ); ?>
 						<input type="hidden" name="action" value="atum_mailer_export_logs" />
 						<?php $this->render_log_filter_hidden_inputs( $filters ); ?>
 						<button class="button button-secondary" type="submit"><?php esc_html_e( 'Export CSV', 'atum-mailer' ); ?></button>
 					</form>
-					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="atum-logs-shell__action">
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="atum-logs-shell__action atum-danger-action" data-atum-danger-form="1" data-danger-title="<?php echo esc_attr__( 'Purge Old Logs?', 'atum-mailer' ); ?>" data-danger-message="<?php echo esc_attr( $purge_confirmation ); ?>" data-danger-confirm="<?php echo esc_attr__( 'Purge Logs', 'atum-mailer' ); ?>">
 						<?php wp_nonce_field( 'atum_mailer_purge_logs' ); ?>
 						<input type="hidden" name="action" value="atum_mailer_purge_logs" />
 						<button class="button button-secondary" type="submit"><?php esc_html_e( 'Purge Old Logs', 'atum-mailer' ); ?></button>
@@ -1467,58 +1693,64 @@ class Atum_Mailer_Admin_Controller {
 				</div>
 			</div>
 
-			<form method="get" class="atum-logs-filter atum-logs-filter--deck">
-				<input type="hidden" name="page" value="<?php echo esc_attr( Atum_Mailer::PAGE_SLUG ); ?>" />
-				<input type="hidden" name="tab" value="logs" />
-				<div class="atum-logs-filter__field">
-					<label for="atum-filter-status"><?php esc_html_e( 'Status', 'atum-mailer' ); ?></label>
-					<select id="atum-filter-status" name="status">
-						<?php foreach ( $allowed_statuses as $status_option ) : ?>
-							<?php
-							$label = 'all' === $status_option ? __( 'All statuses', 'atum-mailer' ) : ucwords( str_replace( '_', ' ', $status_option ) );
-							?>
-							<option value="<?php echo esc_attr( $status_option ); ?>" <?php selected( $filters['status'], $status_option ); ?>><?php echo esc_html( $label ); ?></option>
-						<?php endforeach; ?>
-					</select>
+			<div id="atum-logs-filter-panel" class="atum-logs-filter-panel" data-atum-log-filter-panel="1">
+				<div class="atum-logs-filter-panel__head">
+					<strong><?php esc_html_e( 'Filter Logs', 'atum-mailer' ); ?></strong>
+					<button type="button" class="button button-small button-secondary" data-atum-log-filter-close="1"><?php esc_html_e( 'Close', 'atum-mailer' ); ?></button>
 				</div>
-				<div class="atum-logs-filter__field">
-					<label for="atum-filter-mode"><?php esc_html_e( 'Delivery mode', 'atum-mailer' ); ?></label>
-					<select id="atum-filter-mode" name="delivery_mode">
-						<option value="all" <?php selected( $filters['delivery_mode'], 'all' ); ?>><?php esc_html_e( 'All modes', 'atum-mailer' ); ?></option>
-						<option value="immediate" <?php selected( $filters['delivery_mode'], 'immediate' ); ?>><?php esc_html_e( 'Immediate', 'atum-mailer' ); ?></option>
-						<option value="queue" <?php selected( $filters['delivery_mode'], 'queue' ); ?>><?php esc_html_e( 'Queue', 'atum-mailer' ); ?></option>
-					</select>
-				</div>
-				<div class="atum-logs-filter__field">
-					<label for="atum-filter-retry-state"><?php esc_html_e( 'Retry state', 'atum-mailer' ); ?></label>
-					<select id="atum-filter-retry-state" name="retry_state">
-						<option value="all" <?php selected( $filters['retry_state'], 'all' ); ?>><?php esc_html_e( 'All retry states', 'atum-mailer' ); ?></option>
-						<option value="retrying" <?php selected( $filters['retry_state'], 'retrying' ); ?>><?php esc_html_e( 'Retrying', 'atum-mailer' ); ?></option>
-						<option value="retried" <?php selected( $filters['retry_state'], 'retried' ); ?>><?php esc_html_e( 'Retried (attempt > 1)', 'atum-mailer' ); ?></option>
-						<option value="terminal" <?php selected( $filters['retry_state'], 'terminal' ); ?>><?php esc_html_e( 'Terminal Failures', 'atum-mailer' ); ?></option>
-					</select>
-				</div>
-				<div class="atum-logs-filter__field">
-					<label for="atum-filter-date-from"><?php esc_html_e( 'Date from', 'atum-mailer' ); ?></label>
-					<input id="atum-filter-date-from" type="date" name="date_from" value="<?php echo esc_attr( $filters['date_from'] ); ?>" />
-				</div>
-				<div class="atum-logs-filter__field">
-					<label for="atum-filter-date-to"><?php esc_html_e( 'Date to', 'atum-mailer' ); ?></label>
-					<input id="atum-filter-date-to" type="date" name="date_to" value="<?php echo esc_attr( $filters['date_to'] ); ?>" />
-				</div>
-				<div class="atum-logs-filter__field atum-logs-filter__field--wide">
-					<label for="atum-filter-provider"><?php esc_html_e( 'Provider Message ID', 'atum-mailer' ); ?></label>
-					<input id="atum-filter-provider" type="search" name="provider_message_id" value="<?php echo esc_attr( $filters['provider_message_id'] ); ?>" placeholder="<?php esc_attr_e( 'Provider Message ID', 'atum-mailer' ); ?>" />
-				</div>
-				<div class="atum-logs-filter__field atum-logs-filter__field--search">
-					<label for="atum-filter-query"><?php esc_html_e( 'Search', 'atum-mailer' ); ?></label>
-					<input id="atum-filter-query" type="search" name="s" value="<?php echo esc_attr( $filters['s'] ); ?>" placeholder="<?php esc_attr_e( 'Subject, recipient, error', 'atum-mailer' ); ?>" />
-				</div>
-				<div class="atum-logs-filter__actions">
-					<button class="button button-primary" type="submit"><?php esc_html_e( 'Filter Logs', 'atum-mailer' ); ?></button>
-					<a class="button button-secondary" href="<?php echo esc_url( $this->logs_tab_url() ); ?>"><?php esc_html_e( 'Reset', 'atum-mailer' ); ?></a>
-				</div>
-			</form>
+				<form method="get" class="atum-logs-filter atum-logs-filter--deck">
+					<input type="hidden" name="page" value="<?php echo esc_attr( Atum_Mailer::PAGE_SLUG ); ?>" />
+					<input type="hidden" name="tab" value="logs" />
+					<div class="atum-logs-filter__field">
+						<label for="atum-filter-status"><?php esc_html_e( 'Status', 'atum-mailer' ); ?></label>
+						<select id="atum-filter-status" name="status">
+							<?php foreach ( $allowed_statuses as $status_option ) : ?>
+								<?php
+								$label = 'all' === $status_option ? __( 'All statuses', 'atum-mailer' ) : ucwords( str_replace( '_', ' ', $status_option ) );
+								?>
+								<option value="<?php echo esc_attr( $status_option ); ?>" <?php selected( $filters['status'], $status_option ); ?>><?php echo esc_html( $label ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</div>
+					<div class="atum-logs-filter__field">
+						<label for="atum-filter-mode"><?php esc_html_e( 'Delivery mode', 'atum-mailer' ); ?></label>
+						<select id="atum-filter-mode" name="delivery_mode">
+							<option value="all" <?php selected( $filters['delivery_mode'], 'all' ); ?>><?php esc_html_e( 'All modes', 'atum-mailer' ); ?></option>
+							<option value="immediate" <?php selected( $filters['delivery_mode'], 'immediate' ); ?>><?php esc_html_e( 'Immediate', 'atum-mailer' ); ?></option>
+							<option value="queue" <?php selected( $filters['delivery_mode'], 'queue' ); ?>><?php esc_html_e( 'Queue', 'atum-mailer' ); ?></option>
+						</select>
+					</div>
+					<div class="atum-logs-filter__field">
+						<label for="atum-filter-retry-state"><?php esc_html_e( 'Retry state', 'atum-mailer' ); ?></label>
+						<select id="atum-filter-retry-state" name="retry_state">
+							<option value="all" <?php selected( $filters['retry_state'], 'all' ); ?>><?php esc_html_e( 'All retry states', 'atum-mailer' ); ?></option>
+							<option value="retrying" <?php selected( $filters['retry_state'], 'retrying' ); ?>><?php esc_html_e( 'Retrying', 'atum-mailer' ); ?></option>
+							<option value="retried" <?php selected( $filters['retry_state'], 'retried' ); ?>><?php esc_html_e( 'Retried (attempt > 1)', 'atum-mailer' ); ?></option>
+							<option value="terminal" <?php selected( $filters['retry_state'], 'terminal' ); ?>><?php esc_html_e( 'Terminal Failures', 'atum-mailer' ); ?></option>
+						</select>
+					</div>
+					<div class="atum-logs-filter__field">
+						<label for="atum-filter-date-from"><?php esc_html_e( 'Date from', 'atum-mailer' ); ?></label>
+						<input id="atum-filter-date-from" type="date" name="date_from" value="<?php echo esc_attr( $filters['date_from'] ); ?>" />
+					</div>
+					<div class="atum-logs-filter__field">
+						<label for="atum-filter-date-to"><?php esc_html_e( 'Date to', 'atum-mailer' ); ?></label>
+						<input id="atum-filter-date-to" type="date" name="date_to" value="<?php echo esc_attr( $filters['date_to'] ); ?>" />
+					</div>
+					<div class="atum-logs-filter__field atum-logs-filter__field--wide">
+						<label for="atum-filter-provider"><?php esc_html_e( 'Provider Message ID', 'atum-mailer' ); ?></label>
+						<input id="atum-filter-provider" type="search" name="provider_message_id" value="<?php echo esc_attr( $filters['provider_message_id'] ); ?>" placeholder="<?php esc_attr_e( 'Provider Message ID', 'atum-mailer' ); ?>" />
+					</div>
+					<div class="atum-logs-filter__field atum-logs-filter__field--search">
+						<label for="atum-filter-query"><?php esc_html_e( 'Search', 'atum-mailer' ); ?></label>
+						<input id="atum-filter-query" type="search" name="s" value="<?php echo esc_attr( $filters['s'] ); ?>" placeholder="<?php esc_attr_e( 'Subject, recipient, error', 'atum-mailer' ); ?>" />
+					</div>
+					<div class="atum-logs-filter__actions">
+						<button class="button button-primary" type="submit"><?php esc_html_e( 'Filter Logs', 'atum-mailer' ); ?></button>
+						<a class="button button-secondary" href="<?php echo esc_url( $this->logs_tab_url() ); ?>"><?php esc_html_e( 'Reset', 'atum-mailer' ); ?></a>
+					</div>
+				</form>
+			</div>
 
 			<div class="atum-logs-shell__results">
 				<div class="atum-logs-summary">
@@ -1554,14 +1786,17 @@ class Atum_Mailer_Admin_Controller {
 				<?php $this->render_log_filter_hidden_inputs( $filters ); ?>
 				<input type="hidden" name="log_ids_csv" value="" class="atum-log-ids-csv" />
 				<div class="atum-logs-bulk-controls">
-					<select name="bulk_action" class="atum-logs-bulk-action">
+					<label for="atum-logs-bulk-action" class="atum-logs-bulk-label"><?php esc_html_e( 'Bulk actions', 'atum-mailer' ); ?></label>
+					<select id="atum-logs-bulk-action" name="bulk_action" class="atum-logs-bulk-action">
 						<option value=""><?php esc_html_e( 'Bulk actions', 'atum-mailer' ); ?></option>
 						<option value="retry_selected"><?php esc_html_e( 'Retry selected', 'atum-mailer' ); ?></option>
 						<option value="export_selected"><?php esc_html_e( 'Export selected', 'atum-mailer' ); ?></option>
 						<option value="purge_filtered"><?php esc_html_e( 'Purge filtered', 'atum-mailer' ); ?></option>
 					</select>
-					<button class="button button-secondary" type="submit"><?php esc_html_e( 'Apply', 'atum-mailer' ); ?></button>
+					<button class="button button-primary" type="submit"><?php esc_html_e( 'Apply Action', 'atum-mailer' ); ?></button>
+					<span class="atum-pill is-muted atum-logs-selected-count" data-atum-selected-count="1"><?php esc_html_e( '0 selected', 'atum-mailer' ); ?></span>
 				</div>
+				<p class="atum-logs-bulk-help"><?php esc_html_e( 'Choose an action and apply it to selected rows.', 'atum-mailer' ); ?></p>
 			</form>
 
 				<div class="atum-table-wrap">
@@ -1569,7 +1804,7 @@ class Atum_Mailer_Admin_Controller {
 						<caption class="screen-reader-text"><?php esc_html_e( 'Mail delivery log entries', 'atum-mailer' ); ?></caption>
 						<thead>
 							<tr>
-								<th class="check-column"><input type="checkbox" id="atum-log-select-all" aria-label="<?php esc_attr_e( 'Select all logs', 'atum-mailer' ); ?>" /></th>
+								<th class="check-column check-column--center"><input type="checkbox" id="atum-log-select-all" aria-label="<?php esc_attr_e( 'Select all logs', 'atum-mailer' ); ?>" /></th>
 								<th><?php esc_html_e( 'Date', 'atum-mailer' ); ?></th>
 								<th><?php esc_html_e( 'To', 'atum-mailer' ); ?></th>
 								<th><?php esc_html_e( 'Subject', 'atum-mailer' ); ?></th>
@@ -1591,7 +1826,7 @@ class Atum_Mailer_Admin_Controller {
 									$webhook_label = '' !== $webhook_type ? $this->webhook_event_label( $webhook_type ) : '';
 									?>
 									<tr>
-										<td class="check-column"><input type="checkbox" class="atum-log-select" name="log_ids[]" form="atum-logs-bulk-form" value="<?php echo esc_attr( (string) $log->id ); ?>" /></td>
+										<td class="check-column check-column--center"><input type="checkbox" class="atum-log-select" name="log_ids[]" form="atum-logs-bulk-form" value="<?php echo esc_attr( (string) $log->id ); ?>" /></td>
 										<td><?php echo esc_html( $log->created_at ); ?></td>
 										<td><?php echo esc_html( $this->logs->format_recipient_list( $log->mail_to ) ); ?></td>
 										<td><?php echo esc_html( $log->subject ); ?></td>
@@ -1678,49 +1913,66 @@ class Atum_Mailer_Admin_Controller {
 					<div><strong><?php esc_html_e( 'Attempts', 'atum-mailer' ); ?>:</strong> <span data-atum-field="attempt_count"></span></div>
 					<div><strong><?php esc_html_e( 'Next Attempt', 'atum-mailer' ); ?>:</strong> <span data-atum-field="next_attempt_at"></span></div>
 				</div>
-				<div class="atum-log-drawer__body">
-					<section class="atum-log-resend-panel">
-						<h4><?php esc_html_e( 'Replay / Resend', 'atum-mailer' ); ?></h4>
-						<p><?php esc_html_e( 'Safeguard edits: you can override recipient(s), subject, and delivery mode before resending this payload.', 'atum-mailer' ); ?></p>
-						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="atum-log-resend-form">
-							<?php wp_nonce_field( 'atum_mailer_resend_log' ); ?>
-							<input type="hidden" name="action" value="atum_mailer_resend_log" />
-							<input type="hidden" name="log_id" value="" data-atum-resend-log-id="1" />
-							<label><?php esc_html_e( 'Recipient override (comma separated)', 'atum-mailer' ); ?></label>
-							<input type="text" name="resend_to" value="" data-atum-resend-to="1" />
-							<label><?php esc_html_e( 'Subject override', 'atum-mailer' ); ?></label>
-							<input type="text" name="resend_subject" value="" data-atum-resend-subject="1" />
-							<label><?php esc_html_e( 'Delivery mode override', 'atum-mailer' ); ?></label>
-							<select name="resend_mode" data-atum-resend-mode="1">
-								<option value=""><?php esc_html_e( 'Use current default mode', 'atum-mailer' ); ?></option>
-								<option value="immediate"><?php esc_html_e( 'Immediate', 'atum-mailer' ); ?></option>
-								<option value="queue"><?php esc_html_e( 'Queue', 'atum-mailer' ); ?></option>
-							</select>
-							<button type="submit" class="button button-secondary"><?php esc_html_e( 'Resend With Overrides', 'atum-mailer' ); ?></button>
-						</form>
-					</section>
-					<section class="atum-log-timeline-section">
-						<h4><?php esc_html_e( 'Delivery Timeline', 'atum-mailer' ); ?></h4>
-						<ol class="atum-log-timeline" data-atum-field="timeline"></ol>
-					</section>
-					<section class="atum-log-diagnostics">
-						<div><h4><?php esc_html_e( 'Error', 'atum-mailer' ); ?></h4><pre data-atum-field="error_message"></pre></div>
-						<div><h4><?php esc_html_e( 'Last Error Code', 'atum-mailer' ); ?></h4><pre data-atum-field="last_error_code"></pre></div>
-						<div><h4><?php esc_html_e( 'Webhook Event', 'atum-mailer' ); ?></h4><pre data-atum-field="webhook_event_type"></pre></div>
-					</section>
-					<details class="atum-log-raw-disclosure">
-						<summary><?php esc_html_e( 'Raw Payload & Response', 'atum-mailer' ); ?></summary>
-						<div class="atum-log-raw-disclosure__body">
-							<section><h4><?php esc_html_e( 'Message', 'atum-mailer' ); ?></h4><pre data-atum-field="message"></pre></section>
-							<section><h4><?php esc_html_e( 'Headers', 'atum-mailer' ); ?></h4><pre data-atum-field="headers"></pre></section>
-							<section><h4><?php esc_html_e( 'Attachments', 'atum-mailer' ); ?></h4><pre data-atum-field="attachments"></pre></section>
-							<section><h4><?php esc_html_e( 'Request Payload', 'atum-mailer' ); ?></h4><pre data-atum-field="request_payload"></pre></section>
-							<section><h4><?php esc_html_e( 'Response Body', 'atum-mailer' ); ?></h4><pre data-atum-field="response_body"></pre></section>
-						</div>
-					</details>
+				<div class="atum-log-drawer__scroll">
+					<div class="atum-log-drawer__body">
+							<section class="atum-log-resend-panel">
+								<h4><?php esc_html_e( 'Replay / Resend', 'atum-mailer' ); ?></h4>
+								<p><?php esc_html_e( 'Safeguard edits: you can override recipient(s), subject, and delivery mode before resending this payload.', 'atum-mailer' ); ?></p>
+								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="atum-log-resend-form">
+									<?php wp_nonce_field( 'atum_mailer_resend_log' ); ?>
+									<input type="hidden" name="action" value="atum_mailer_resend_log" />
+									<input type="hidden" name="log_id" value="" data-atum-resend-log-id="1" />
+									<label><?php esc_html_e( 'Recipient override (comma separated)', 'atum-mailer' ); ?></label>
+									<input type="text" name="resend_to" value="" data-atum-resend-to="1" />
+									<label><?php esc_html_e( 'Subject override', 'atum-mailer' ); ?></label>
+									<input type="text" name="resend_subject" value="" data-atum-resend-subject="1" />
+									<label><?php esc_html_e( 'Delivery mode override', 'atum-mailer' ); ?></label>
+									<select name="resend_mode" data-atum-resend-mode="1">
+										<option value=""><?php esc_html_e( 'Use current default mode', 'atum-mailer' ); ?></option>
+										<option value="immediate"><?php esc_html_e( 'Immediate', 'atum-mailer' ); ?></option>
+										<option value="queue"><?php esc_html_e( 'Queue', 'atum-mailer' ); ?></option>
+									</select>
+									<button type="submit" class="button button-secondary"><?php esc_html_e( 'Resend With Overrides', 'atum-mailer' ); ?></button>
+								</form>
+							</section>
+							<section class="atum-log-timeline-section">
+								<h4><?php esc_html_e( 'Delivery Timeline', 'atum-mailer' ); ?></h4>
+								<ol class="atum-log-timeline" data-atum-field="timeline"></ol>
+							</section>
+							<section class="atum-log-diagnostics">
+								<div><h4><?php esc_html_e( 'Error', 'atum-mailer' ); ?></h4><pre data-atum-field="error_message"></pre></div>
+								<div><h4><?php esc_html_e( 'Last Error Code', 'atum-mailer' ); ?></h4><pre data-atum-field="last_error_code"></pre></div>
+								<div><h4><?php esc_html_e( 'Webhook Event', 'atum-mailer' ); ?></h4><pre data-atum-field="webhook_event_type"></pre></div>
+							</section>
+							<details class="atum-log-raw-disclosure">
+								<summary><?php esc_html_e( 'Raw Payload & Response', 'atum-mailer' ); ?></summary>
+								<div class="atum-log-raw-disclosure__body">
+									<section><h4><?php esc_html_e( 'Message', 'atum-mailer' ); ?></h4><pre data-atum-field="message"></pre></section>
+									<section><h4><?php esc_html_e( 'Headers', 'atum-mailer' ); ?></h4><pre data-atum-field="headers"></pre></section>
+									<section><h4><?php esc_html_e( 'Attachments', 'atum-mailer' ); ?></h4><pre data-atum-field="attachments"></pre></section>
+									<section><h4><?php esc_html_e( 'Request Payload', 'atum-mailer' ); ?></h4><pre data-atum-field="request_payload"></pre></section>
+									<section><h4><?php esc_html_e( 'Response Body', 'atum-mailer' ); ?></h4><pre data-atum-field="response_body"></pre></section>
+								</div>
+							</details>
+					</div>
 				</div>
+				<footer class="atum-log-drawer__footer">
+					<button type="button" class="button button-secondary" data-atum-close="1"><?php esc_html_e( 'Close', 'atum-mailer' ); ?></button>
+				</footer>
 			</aside>
 		</div>
+
+			<div id="atum-danger-modal" class="atum-danger-modal" aria-hidden="true">
+				<div class="atum-danger-modal__scrim" data-atum-danger-close="1"></div>
+				<div class="atum-danger-modal__panel" role="dialog" aria-modal="true" aria-labelledby="atum-danger-modal-title">
+					<h3 id="atum-danger-modal-title" data-atum-danger-title="1"><?php esc_html_e( 'Confirm Action', 'atum-mailer' ); ?></h3>
+					<p data-atum-danger-message="1"><?php esc_html_e( 'This action cannot be undone.', 'atum-mailer' ); ?></p>
+					<div class="atum-danger-modal__actions">
+						<button type="button" class="button button-secondary" data-atum-danger-cancel="1"><?php esc_html_e( 'Cancel', 'atum-mailer' ); ?></button>
+						<button type="button" class="button button-primary atum-danger-modal__confirm" data-atum-danger-confirm="1"><?php esc_html_e( 'Confirm', 'atum-mailer' ); ?></button>
+					</div>
+				</div>
+			</div>
 		<?php
 	}
 
@@ -1809,20 +2061,32 @@ class Atum_Mailer_Admin_Controller {
 			),
 		);
 
-		$advanced_retention_fields = array(
-			array(
-				'label'   => __( 'Store Delivery Logs', 'atum-mailer' ),
-				'callback'=> 'render_mail_retention_field',
-			),
+			$advanced_retention_fields = array(
+				array(
+					'label'   => __( 'Store Delivery Logs', 'atum-mailer' ),
+					'callback'=> 'render_mail_retention_field',
+				),
 			array(
 				'label'   => __( 'Retention Window (days)', 'atum-mailer' ),
 				'callback'=> 'render_retention_days_field',
 			),
-			array(
-				'label'   => __( 'Webhook Shared Secret', 'atum-mailer' ),
-				'callback'=> 'render_postmark_webhook_secret_field',
-			),
-		);
+				array(
+					'label'   => __( 'Webhook Shared Secret', 'atum-mailer' ),
+					'callback'=> 'render_postmark_webhook_secret_field',
+				),
+				array(
+					'label'   => __( 'Require Signature Verification', 'atum-mailer' ),
+					'callback'=> 'render_webhook_require_signature_field',
+				),
+				array(
+					'label'   => __( 'Webhook Replay Window (s)', 'atum-mailer' ),
+					'callback'=> 'render_webhook_replay_window_field',
+				),
+				array(
+					'label'   => __( 'Webhook Rate Limit (/min/IP)', 'atum-mailer' ),
+					'callback'=> 'render_webhook_rate_limit_field',
+				),
+			);
 		?>
 		<section class="atum-card atum-card--full atum-settings-shell">
 			<form method="post" action="options.php" class="atum-settings-layout">
@@ -2361,7 +2625,62 @@ class Atum_Mailer_Admin_Controller {
 	 */
 	public function render_postmark_webhook_secret_field() {
 		$options = $this->settings->get_options();
-		?><div id="atum-field-webhook-secret"><input type="text" class="regular-text" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[postmark_webhook_secret]' ); ?>" value="<?php echo esc_attr( (string) $options['postmark_webhook_secret'] ); ?>" autocomplete="off" /></div><?php
+		$has_secret = '' !== trim( (string) ( $options['postmark_webhook_secret'] ?? '' ) );
+		?>
+		<div id="atum-field-webhook-secret">
+			<input type="password" class="regular-text" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[postmark_webhook_secret]' ); ?>" value="" autocomplete="new-password" />
+			<?php if ( $has_secret ) : ?>
+				<p class="description"><?php esc_html_e( 'A webhook secret is already saved. Leave blank to keep it unchanged.', 'atum-mailer' ); ?></p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[postmark_webhook_secret_clear]' ); ?>" value="1" />
+					<?php esc_html_e( 'Clear saved webhook secret', 'atum-mailer' ); ?>
+				</label>
+			<?php else : ?>
+				<p class="description"><?php esc_html_e( 'Set a high-entropy shared secret and configure the same value on your webhook sender.', 'atum-mailer' ); ?></p>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render webhook signature requirement field.
+	 *
+	 * @return void
+	 */
+	public function render_webhook_require_signature_field() {
+		?><div id="atum-field-webhook-require-signature"><?php
+		$this->render_checkbox_field( 'webhook_require_signature', __( 'Require HMAC signature + timestamp headers on webhook requests.', 'atum-mailer' ) );
+		echo '</div>';
+	}
+
+	/**
+	 * Render webhook replay window field.
+	 *
+	 * @return void
+	 */
+	public function render_webhook_replay_window_field() {
+		$options = $this->settings->get_options();
+		?>
+		<div id="atum-field-webhook-replay-window">
+			<input type="number" min="30" max="86400" step="1" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[webhook_replay_window_seconds]' ); ?>" value="<?php echo esc_attr( (string) $options['webhook_replay_window_seconds'] ); ?>" />
+			<p class="description"><?php esc_html_e( 'Signed webhook timestamps outside this window are rejected.', 'atum-mailer' ); ?></p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render webhook rate-limit field.
+	 *
+	 * @return void
+	 */
+	public function render_webhook_rate_limit_field() {
+		$options = $this->settings->get_options();
+		?>
+		<div id="atum-field-webhook-rate-limit">
+			<input type="number" min="1" max="5000" step="1" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[webhook_rate_limit_per_minute]' ); ?>" value="<?php echo esc_attr( (string) $options['webhook_rate_limit_per_minute'] ); ?>" />
+			<p class="description"><?php esc_html_e( 'Per-IP webhook request cap per minute.', 'atum-mailer' ); ?></p>
+		</div>
+		<?php
 	}
 
 	/**

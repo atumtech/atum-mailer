@@ -31,18 +31,12 @@ jobs:
       - name: Run tests
         run: php /tmp/phpunit.phar -c phpunit.xml.dist
 
+      - name: Validate release version metadata
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: bash scripts/verify-release-version.sh "${GITHUB_REF_NAME}"
+
       - name: Build plugin zip
-        run: |
-          mkdir -p dist/atum-mailer
-          rsync -av ./ dist/atum-mailer/ \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude '.DS_Store' \
-            --exclude '.phpunit.result.cache' \
-            --exclude 'tests' \
-            --exclude 'dist' \
-            --exclude 'phpunit.xml.dist'
-          (cd dist && zip -r atum-mailer.zip atum-mailer)
+        run: bash scripts/build-release.sh
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

@@ -539,7 +539,171 @@
     }
   }
 
-  function initLogsBulkActions() {
+  function initLogsFilterPanel() {
+    var panel = document.querySelector("[data-atum-log-filter-panel='1']");
+    var toggle = document.querySelector("[data-atum-log-filter-toggle='1']");
+    if (!panel || !toggle) {
+      return;
+    }
+
+    var closeBtn = panel.querySelector("[data-atum-log-filter-close='1']");
+    var open = false;
+
+    function setOpen(next) {
+      open = !!next;
+      panel.classList.toggle("is-open", open);
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    panel.classList.add("is-enhanced");
+    setOpen(false);
+
+    toggle.addEventListener("click", function () {
+      setOpen(!open);
+    });
+
+    if (closeBtn) {
+      closeBtn.addEventListener("click", function () {
+        setOpen(false);
+      });
+    }
+
+    document.addEventListener("keydown", function (event) {
+      if (!open) {
+        return;
+      }
+      if ("Escape" === event.key) {
+        setOpen(false);
+      }
+    });
+
+    document.addEventListener("click", function (event) {
+      if (!open) {
+        return;
+      }
+      if (panel.contains(event.target) || toggle.contains(event.target)) {
+        return;
+      }
+      setOpen(false);
+    });
+  }
+
+  function initDangerModal() {
+    var modal = document.getElementById("atum-danger-modal");
+    if (!modal) {
+      return {
+        open: function (options, onConfirm) {
+          var message = (options && options.message) || "";
+          if (window.confirm(message) && "function" === typeof onConfirm) {
+            onConfirm();
+          }
+        },
+      };
+    }
+
+    var titleNode = modal.querySelector("[data-atum-danger-title='1']");
+    var messageNode = modal.querySelector("[data-atum-danger-message='1']");
+    var confirmBtn = modal.querySelector("[data-atum-danger-confirm='1']");
+    var cancelBtn = modal.querySelector("[data-atum-danger-cancel='1']");
+    var closeNodes = modal.querySelectorAll("[data-atum-danger-close='1']");
+    var currentConfirm = null;
+
+    function closeModal() {
+      modal.classList.remove("is-open");
+      modal.setAttribute("aria-hidden", "true");
+      currentConfirm = null;
+    }
+
+    function openModal(options, onConfirm) {
+      if (titleNode) {
+        titleNode.textContent =
+          (options && options.title) || "Confirm Action";
+      }
+      if (messageNode) {
+        messageNode.textContent =
+          (options && options.message) || "";
+      }
+      if (confirmBtn) {
+        confirmBtn.textContent =
+          (options && options.confirmLabel) ||
+          atumMailerAdmin.i18n.dangerConfirm ||
+          "Confirm";
+      }
+
+      currentConfirm = "function" === typeof onConfirm ? onConfirm : null;
+      modal.classList.add("is-open");
+      modal.setAttribute("aria-hidden", "false");
+      if (confirmBtn && "function" === typeof confirmBtn.focus) {
+        confirmBtn.focus();
+      }
+    }
+
+    closeNodes.forEach(function (node) {
+      node.addEventListener("click", closeModal);
+    });
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", closeModal);
+    }
+
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", function () {
+        var cb = currentConfirm;
+        closeModal();
+        if ("function" === typeof cb) {
+          cb();
+        }
+      });
+    }
+
+    document.addEventListener("keydown", function (event) {
+      if (!modal.classList.contains("is-open")) {
+        return;
+      }
+      if ("Escape" === event.key) {
+        closeModal();
+      }
+    });
+
+    return {
+      open: openModal,
+    };
+  }
+
+  function initDangerActions(modalController) {
+    var forms = Array.prototype.slice.call(
+      document.querySelectorAll("[data-atum-danger-form='1']")
+    );
+    if (!forms.length) {
+      return;
+    }
+
+    forms.forEach(function (form) {
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var title =
+          form.getAttribute("data-danger-title") || "Confirm Action";
+        var message = form.getAttribute("data-danger-message") || "";
+        var confirmLabel =
+          form.getAttribute("data-danger-confirm") ||
+          atumMailerAdmin.i18n.dangerConfirm ||
+          "Confirm";
+
+        modalController.open(
+          {
+            title: title,
+            message: message,
+            confirmLabel: confirmLabel,
+          },
+          function () {
+            form.submit();
+          }
+        );
+      });
+    });
+  }
+
+  function initLogsBulkActions(modalController) {
     var selectAll = document.getElementById("atum-log-select-all");
     var checks = Array.prototype.slice.call(
       document.querySelectorAll(".atum-log-select")
@@ -547,9 +711,17 @@
     var forms = Array.prototype.slice.call(
       document.querySelectorAll(".atum-logs-bulk-form")
     );
+    var countPills = Array.prototype.slice.call(
+      document.querySelectorAll("[data-atum-selected-count='1']")
+    );
 
-    if (!checks.length || !forms.length) {
+    if (!forms.length) {
       return;
+    }
+
+    function selectedLabel(count) {
+      var template = atumMailerAdmin.i18n.selectedLogsLabel || "%d selected";
+      return template.replace("%d", String(count));
     }
 
     function selectedIds() {
@@ -562,22 +734,34 @@
         });
     }
 
+    function syncSelectedState() {
+      var selected = selectedIds().length;
+      if (selectAll) {
+        selectAll.checked = checks.length > 0 && selected === checks.length;
+        selectAll.indeterminate =
+          selected > 0 && selected < checks.length;
+      }
+      countPills.forEach(function (pill) {
+        pill.textContent = selectedLabel(selected);
+      });
+    }
+
     if (selectAll) {
       selectAll.addEventListener("change", function () {
         checks.forEach(function (box) {
           box.checked = !!selectAll.checked;
         });
+        syncSelectedState();
       });
     }
 
     checks.forEach(function (box) {
       box.addEventListener("change", function () {
-        if (!selectAll) {
-          return;
-        }
-        selectAll.checked = checks.length === selectedIds().length;
+        syncSelectedState();
       });
     });
+
+    syncSelectedState();
 
     forms.forEach(function (form) {
       form.addEventListener("submit", function (event) {
@@ -603,9 +787,20 @@
         }
 
         if ("purge_filtered" === action) {
-          if (!window.confirm(atumMailerAdmin.i18n.confirmPurgeFiltered)) {
-            event.preventDefault();
-          }
+          event.preventDefault();
+          modalController.open(
+            {
+              title:
+                atumMailerAdmin.i18n.confirmPurgeFilteredTitle ||
+                "Purge Filtered Logs?",
+              message: atumMailerAdmin.i18n.confirmPurgeFiltered,
+              confirmLabel:
+                atumMailerAdmin.i18n.confirmPurgeButton || "Purge Logs",
+            },
+            function () {
+              form.submit();
+            }
+          );
         }
       });
     });
@@ -619,7 +814,10 @@
     initEmailAdder();
     initTabsKeyboardNavigation();
     initTokenReveal();
+    initLogsFilterPanel();
     initLogDrawer();
-    initLogsBulkActions();
+    var dangerModal = initDangerModal();
+    initDangerActions(dangerModal);
+    initLogsBulkActions(dangerModal);
   });
 })();

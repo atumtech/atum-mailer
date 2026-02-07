@@ -358,10 +358,14 @@ class Atum_Mailer_Mail_Interceptor {
 			$from_email = sanitize_email( get_bloginfo( 'admin_email' ) );
 		}
 
-		$from_email = sanitize_email( apply_filters( 'wp_mail_from', $from_email ) );
-		$from_name  = sanitize_text_field( apply_filters( 'wp_mail_from_name', $from_name ) );
+		$filtered_from_email = sanitize_email( apply_filters( 'wp_mail_from', $from_email ) );
+		if ( '' !== $filtered_from_email && is_email( $filtered_from_email ) ) {
+			$from_email = $filtered_from_email;
+		}
 
-		if ( empty( $from_email ) ) {
+		$from_name = sanitize_text_field( apply_filters( 'wp_mail_from_name', $from_name ) );
+
+		if ( empty( $from_email ) || ! is_email( $from_email ) ) {
 			return new WP_Error( 'atum_mailer_missing_sender', __( 'No sender email is configured.', 'atum-mailer' ) );
 		}
 
@@ -489,7 +493,7 @@ class Atum_Mailer_Mail_Interceptor {
 	 * @return array<string, string>
 	 */
 	private function parse_single_address( $raw ) {
-		$raw = trim( $raw );
+		$raw = trim( html_entity_decode( (string) $raw, ENT_QUOTES, 'UTF-8' ) );
 		if ( '' === $raw ) {
 			return array( 'email' => '', 'name' => '' );
 		}
@@ -500,7 +504,12 @@ class Atum_Mailer_Mail_Interceptor {
 			$name  = trim( trim( $matches[1] ), "\"'" );
 			$email = trim( $matches[2] );
 		} else {
-			$email = $raw;
+			if ( preg_match( '/[A-Z0-9._%+\'+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', $raw, $matches ) ) {
+				$email = (string) $matches[0];
+				$name  = trim( str_replace( $email, '', $raw ), " \t\n\r\0\x0B<>\"'" );
+			} else {
+				$email = $raw;
+			}
 		}
 
 		return array(
@@ -555,11 +564,13 @@ class Atum_Mailer_Mail_Interceptor {
 	 */
 	private function format_from_header( $email, $name ) {
 		$email = sanitize_email( $email );
-		$name  = sanitize_text_field( $name );
+		$name  = sanitize_text_field( wp_specialchars_decode( (string) $name, ENT_QUOTES ) );
 		if ( '' === $name ) {
 			return $email;
 		}
-		return sprintf( '%s <%s>', $name, $email );
+
+		$escaped_name = addcslashes( $name, "\\\"" );
+		return sprintf( '"%s" <%s>', $escaped_name, $email );
 	}
 
 	/**
@@ -742,6 +753,7 @@ class Atum_Mailer_Mail_Interceptor {
 				'http_status'     => $http_status,
 				'request_payload' => $payload,
 				'response_body'   => is_array( $error_data ) && isset( $error_data['response'] ) ? (string) $error_data['response'] : '',
+				'force_store_payload' => true,
 				'attempt_count'   => 1,
 				'next_attempt_at' => null,
 				'last_error_code' => $this->client->normalizeErrorCode( $error ),
@@ -783,6 +795,7 @@ class Atum_Mailer_Mail_Interceptor {
 				'http_status'     => $http_status,
 				'request_payload' => $payload,
 				'response_body'   => $response,
+				'force_store_payload' => true,
 				'attempt_count'   => $attempt,
 				'next_attempt_at' => null,
 				'last_error_code' => $normalized,

@@ -277,14 +277,41 @@ class Atum_Mailer_Bootstrap {
 	 */
 	public function can_receive_webhook( WP_REST_Request $request ) {
 		$options = $this->settings->get_options();
+		$rate_limit_check = $this->enforce_webhook_rate_limit( $request, $options );
+		if ( is_wp_error( $rate_limit_check ) ) {
+			return $rate_limit_check;
+		}
+
 		$secret  = trim( (string) ( $options['postmark_webhook_secret'] ?? '' ) );
 		if ( '' === $secret ) {
 			return new WP_Error( 'atum_mailer_webhook_disabled', __( 'Webhook secret is not configured.', 'atum-mailer' ), array( 'status' => 403 ) );
 		}
 
+		$raw_body = $this->resolve_webhook_raw_body( $request );
+		$max_body_bytes = max(
+			1024,
+			(int) apply_filters( 'atum_mailer_webhook_max_body_bytes', 512 * 1024, $request, $options )
+		);
+		if ( strlen( $raw_body ) > $max_body_bytes ) {
+			return new WP_Error( 'atum_mailer_webhook_payload_too_large', __( 'Webhook payload exceeds allowed size.', 'atum-mailer' ), array( 'status' => 413 ) );
+		}
+
 		$provided = (string) $request->get_header( 'x-atum-webhook-secret' );
 		if ( '' === $provided || ! hash_equals( $secret, $provided ) ) {
 			return new WP_Error( 'atum_mailer_webhook_auth_failed', __( 'Invalid webhook secret.', 'atum-mailer' ), array( 'status' => 403 ) );
+		}
+
+		$require_signature_default = ! empty( $options['webhook_require_signature'] );
+		$require_signature = (bool) apply_filters( 'atum_mailer_webhook_require_signature', $require_signature_default, $request, $options );
+		$signature_header  = trim( (string) $request->get_header( 'x-atum-webhook-signature' ) );
+		$timestamp_header  = trim( (string) $request->get_header( 'x-atum-webhook-timestamp' ) );
+		$has_signature     = '' !== $signature_header || '' !== $timestamp_header;
+
+		if ( $require_signature || $has_signature ) {
+			$signature_check = $this->verify_webhook_signature( $request, $raw_body, $secret, $options, $require_signature );
+			if ( is_wp_error( $signature_check ) ) {
+				return $signature_check;
+			}
 		}
 
 		return true;
@@ -337,6 +364,165 @@ class Atum_Mailer_Bootstrap {
 
 		do_action( 'atum_mailer_webhook_event', $payload, $status, $message_id );
 		return new WP_REST_Response( array( 'ok' => true ), 200 );
+	}
+
+	/**
+	 * Validate optional webhook HMAC signature with timestamp + replay lock.
+	 *
+	 * @param WP_REST_Request      $request Request.
+	 * @param string               $raw_body Raw request body.
+	 * @param string               $secret Shared secret.
+	 * @param array<string, mixed> $options Plugin options.
+	 * @param bool                 $required Whether signature is required.
+	 * @return true|WP_Error
+	 */
+	private function verify_webhook_signature( WP_REST_Request $request, $raw_body, $secret, $options, $required ) {
+		$timestamp_header = trim( (string) $request->get_header( 'x-atum-webhook-timestamp' ) );
+		$signature_header = trim( (string) $request->get_header( 'x-atum-webhook-signature' ) );
+		if ( '' === $timestamp_header || '' === $signature_header ) {
+			if ( $required ) {
+				return new WP_Error( 'atum_mailer_webhook_signature_missing', __( 'Webhook signature headers are required.', 'atum-mailer' ), array( 'status' => 403 ) );
+			}
+			return true;
+		}
+
+		$timestamp = ctype_digit( $timestamp_header ) ? (int) $timestamp_header : strtotime( $timestamp_header );
+		if ( ! is_int( $timestamp ) || $timestamp <= 0 ) {
+			return new WP_Error( 'atum_mailer_webhook_timestamp_invalid', __( 'Webhook timestamp is invalid.', 'atum-mailer' ), array( 'status' => 403 ) );
+		}
+
+		$window_default = max( 30, min( DAY_IN_SECONDS, (int) ( $options['webhook_replay_window_seconds'] ?? ( 5 * MINUTE_IN_SECONDS ) ) ) );
+		$window_seconds = max(
+			30,
+			min(
+				DAY_IN_SECONDS,
+				(int) apply_filters( 'atum_mailer_webhook_replay_window_seconds', $window_default, $request, $options )
+			)
+		);
+		if ( abs( time() - $timestamp ) > $window_seconds ) {
+			return new WP_Error( 'atum_mailer_webhook_timestamp_out_of_window', __( 'Webhook timestamp is outside the allowed window.', 'atum-mailer' ), array( 'status' => 403 ) );
+		}
+
+		$provided = strtolower( $signature_header );
+		if ( 0 === strpos( $provided, 'sha256=' ) ) {
+			$provided = substr( $provided, 7 );
+		} elseif ( 0 === strpos( $provided, 'v1=' ) ) {
+			$provided = substr( $provided, 3 );
+		}
+
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $provided ) ) {
+			return new WP_Error( 'atum_mailer_webhook_signature_invalid', __( 'Webhook signature format is invalid.', 'atum-mailer' ), array( 'status' => 403 ) );
+		}
+
+		$expected = hash_hmac( 'sha256', $timestamp . '.' . $raw_body, $secret );
+		if ( ! hash_equals( $expected, $provided ) ) {
+			return new WP_Error( 'atum_mailer_webhook_signature_mismatch', __( 'Webhook signature verification failed.', 'atum-mailer' ), array( 'status' => 403 ) );
+		}
+
+		$replay_key = 'atum_mailer_webhook_sig_' . md5( $timestamp . '|' . $provided );
+		if ( false !== get_transient( $replay_key ) ) {
+			return new WP_Error( 'atum_mailer_webhook_replay_detected', __( 'Webhook signature replay detected.', 'atum-mailer' ), array( 'status' => 409 ) );
+		}
+
+		set_transient( $replay_key, 1, $window_seconds );
+		return true;
+	}
+
+	/**
+	 * Resolve raw webhook request body for signature checks.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return string
+	 */
+	private function resolve_webhook_raw_body( WP_REST_Request $request ) {
+		$raw_body = '';
+		if ( method_exists( $request, 'get_body' ) ) {
+			$raw_body = (string) $request->get_body();
+		}
+		if ( '' !== trim( $raw_body ) ) {
+			return $raw_body;
+		}
+
+		$payload = $request->get_json_params();
+		if ( is_array( $payload ) ) {
+			return (string) wp_json_encode( $payload );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Apply per-IP webhook request rate limit.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @param array<string, mixed> $options Plugin options.
+	 * @return true|WP_Error
+	 */
+	private function enforce_webhook_rate_limit( WP_REST_Request $request, $options = array() ) {
+		$limit_default = max( 1, (int) ( $options['webhook_rate_limit_per_minute'] ?? 120 ) );
+		$limit = (int) apply_filters( 'atum_mailer_webhook_rate_limit_per_minute', $limit_default, $request, $options );
+		if ( $limit <= 0 ) {
+			return true;
+		}
+
+		$ip = $this->resolve_webhook_request_ip( $request, $options );
+		if ( '' === $ip ) {
+			$ip = 'unknown';
+		}
+
+		$bucket = (int) floor( time() / MINUTE_IN_SECONDS );
+		$key    = 'atum_mailer_webhook_rl_' . md5( $ip . '|' . $bucket );
+		$count  = (int) get_transient( $key );
+		$count++;
+		set_transient( $key, $count, 2 * MINUTE_IN_SECONDS );
+
+		if ( $count > $limit ) {
+			return new WP_Error( 'atum_mailer_webhook_rate_limited', __( 'Webhook rate limit exceeded.', 'atum-mailer' ), array( 'status' => 429 ) );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Resolve best-effort client IP for webhook throttling.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return string
+	 */
+	private function resolve_webhook_request_ip( WP_REST_Request $request, $options = array() ) {
+		$remote_addr = trim( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) );
+		$trust_forwarded = (bool) apply_filters( 'atum_mailer_webhook_trust_forwarded_ip_headers', false, $request, $options, $remote_addr );
+
+		$candidates = array();
+		if ( $trust_forwarded ) {
+			$candidates[] = (string) $request->get_header( 'cf-connecting-ip' );
+			$candidates[] = (string) $request->get_header( 'x-real-ip' );
+			$candidates[] = (string) $request->get_header( 'x-forwarded-for' );
+		}
+		if ( '' !== $remote_addr ) {
+			$candidates[] = $remote_addr;
+		}
+		if ( ! $trust_forwarded && '' === $remote_addr ) {
+			$candidates[] = (string) $request->get_header( 'cf-connecting-ip' );
+			$candidates[] = (string) $request->get_header( 'x-real-ip' );
+			$candidates[] = (string) $request->get_header( 'x-forwarded-for' );
+		}
+
+		foreach ( $candidates as $candidate ) {
+			if ( '' === $candidate ) {
+				continue;
+			}
+
+			$parts = explode( ',', $candidate );
+			foreach ( $parts as $part ) {
+				$ip = trim( (string) $part );
+				if ( '' !== $ip && false !== filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+					return $ip;
+				}
+			}
+		}
+
+		return '';
 	}
 
 	/**

@@ -302,16 +302,29 @@ class Atum_Mailer_GitHub_Updater {
 				}
 
 				if ( '' !== $token && ! empty( $asset['url'] ) ) {
-					return (string) $asset['url'];
+					$api_url = (string) $asset['url'];
+					if ( $this->is_allowed_package_url( $api_url ) ) {
+						return $api_url;
+					}
 				}
 
 				if ( ! empty( $asset['browser_download_url'] ) ) {
-					return (string) $asset['browser_download_url'];
+					$download_url = (string) $asset['browser_download_url'];
+					if ( $this->is_allowed_package_url( $download_url ) ) {
+						return $download_url;
+					}
 				}
 			}
 		}
 
-		return ! empty( $release['zipball_url'] ) ? (string) $release['zipball_url'] : '';
+		if ( ! empty( $release['zipball_url'] ) ) {
+			$zipball_url = (string) $release['zipball_url'];
+			if ( $this->is_allowed_package_url( $zipball_url ) ) {
+				return $zipball_url;
+			}
+		}
+
+		return '';
 	}
 
 	/**
@@ -359,16 +372,107 @@ class Atum_Mailer_GitHub_Updater {
 	 * @return bool
 	 */
 	private function is_repository_api_url( $url ) {
-		if ( false === strpos( $url, 'https://api.github.com/repos/' ) ) {
+		$parts = wp_parse_url( (string) $url );
+		if ( ! is_array( $parts ) ) {
 			return false;
 		}
 
-		$repo = $this->get_repository();
+		$scheme = strtolower( (string) ( $parts['scheme'] ?? '' ) );
+		$host   = strtolower( (string) ( $parts['host'] ?? '' ) );
+		$path   = strtolower( (string) ( $parts['path'] ?? '' ) );
+		if ( 'https' !== $scheme || 'api.github.com' !== $host || '' === $path ) {
+			return false;
+		}
+
+		$repo = strtolower( trim( $this->get_repository(), '/' ) );
 		if ( '' === $repo ) {
 			return false;
 		}
 
-		return false !== strpos( $url, '/repos/' . $repo . '/' );
+		return 0 === strpos( $path, '/repos/' . $repo . '/' );
+	}
+
+	/**
+	 * Guard package URLs to trusted GitHub hosts over HTTPS.
+	 *
+	 * @param string $url Candidate URL.
+	 * @return bool
+	 */
+	private function is_allowed_package_url( $url ) {
+		$parts = wp_parse_url( (string) $url );
+		if ( ! is_array( $parts ) ) {
+			return false;
+		}
+
+		$scheme = strtolower( (string) ( $parts['scheme'] ?? '' ) );
+		$host   = strtolower( (string) ( $parts['host'] ?? '' ) );
+		$path   = strtolower( (string) ( $parts['path'] ?? '' ) );
+		if ( 'https' !== $scheme || '' === $host ) {
+			return false;
+		}
+
+		$default_hosts = array(
+			'api.github.com',
+			'github.com',
+			'codeload.github.com',
+		);
+		$allowed_hosts = apply_filters( 'atum_mailer_github_allowed_package_hosts', $default_hosts, $this->get_repository() );
+		$allowed_hosts = is_array( $allowed_hosts ) ? $allowed_hosts : $default_hosts;
+		$allowed_hosts = array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						static function ( $candidate ) {
+							return strtolower( trim( (string) $candidate ) );
+						},
+						$allowed_hosts
+					),
+					static function ( $candidate ) {
+						return '' !== $candidate;
+					}
+				)
+			)
+		);
+
+		if ( empty( $allowed_hosts ) ) {
+			$allowed_hosts = $default_hosts;
+		}
+
+		if ( ! in_array( $host, $allowed_hosts, true ) ) {
+			return false;
+		}
+
+		return $this->is_allowed_package_path_for_repository( $host, $path );
+	}
+
+	/**
+	 * Ensure package URL path is scoped to the configured repository.
+	 *
+	 * @param string $host Hostname.
+	 * @param string $path URL path.
+	 * @return bool
+	 */
+	private function is_allowed_package_path_for_repository( $host, $path ) {
+		$repo = strtolower( trim( $this->get_repository(), '/' ) );
+		if ( '' === $repo || '' === $path ) {
+			return false;
+		}
+
+		if ( 'api.github.com' === $host ) {
+			return 0 === strpos( $path, '/repos/' . $repo . '/releases/assets/' )
+				|| 0 === strpos( $path, '/repos/' . $repo . '/zipball/' );
+		}
+
+		if ( 'github.com' === $host ) {
+			return 0 === strpos( $path, '/' . $repo . '/releases/download/' );
+		}
+
+		if ( 'codeload.github.com' === $host ) {
+			return 0 === strpos( $path, '/' . $repo . '/zip/' )
+				|| 0 === strpos( $path, '/' . $repo . '/legacy.zip/' );
+		}
+
+		return false;
 	}
 
 	/**

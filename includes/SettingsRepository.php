@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Atum_Mailer_Settings_Repository {
 	const OPTION_KEY             = 'atum_mailer_options';
 	const TOKEN_OPTION_KEY       = 'atum_mailer_postmark_token';
+	const WEBHOOK_SECRET_OPTION_KEY = 'atum_mailer_webhook_secret';
 	const LAST_CLEANUP_OPTION    = 'atum_mailer_last_cleanup';
 	const QUEUE_OPTION_KEY       = 'atum_mailer_queue_jobs';
 	const LAST_API_OUTAGE_OPTION = 'atum_mailer_last_api_outage';
@@ -45,12 +46,15 @@ class Atum_Mailer_Settings_Repository {
 			'allow_token_reveal'      => 0,
 			'log_detail_mode'         => 'metadata',
 			'delivery_mode'           => 'immediate',
-			'fallback_to_wp_mail'     => 0,
-			'postmark_webhook_secret' => '',
-			'queue_max_attempts'      => 5,
-			'queue_retry_base_delay'  => 60,
-			'queue_retry_max_delay'   => 3600,
-		);
+				'fallback_to_wp_mail'     => 0,
+				'postmark_webhook_secret' => '',
+				'webhook_require_signature' => 0,
+				'webhook_replay_window_seconds' => 300,
+				'webhook_rate_limit_per_minute' => 120,
+				'queue_max_attempts'      => 5,
+				'queue_retry_base_delay'  => 60,
+				'queue_retry_max_delay'   => 3600,
+			);
 	}
 
 	/**
@@ -67,10 +71,17 @@ class Atum_Mailer_Settings_Repository {
 		$token = (string) get_option( self::TOKEN_OPTION_KEY, '' );
 		if ( '' === $token && ! empty( $current['postmark_server_token'] ) ) {
 			$token = sanitize_text_field( (string) $current['postmark_server_token'] );
-			update_option( self::TOKEN_OPTION_KEY, $token );
+			update_option( self::TOKEN_OPTION_KEY, $token, false );
+		}
+		$webhook_secret = (string) get_option( self::WEBHOOK_SECRET_OPTION_KEY, '' );
+		if ( '' === $webhook_secret && ! empty( $current['postmark_webhook_secret'] ) ) {
+			$webhook_secret = sanitize_text_field( (string) $current['postmark_webhook_secret'] );
+			update_option( self::WEBHOOK_SECRET_OPTION_KEY, $webhook_secret, false );
 		}
 
-		$merged = wp_parse_args( $current, $this->default_options() );
+		$merged                            = wp_parse_args( $current, $this->default_options() );
+		$merged['postmark_server_token']   = '';
+		$merged['postmark_webhook_secret'] = '';
 		update_option( self::OPTION_KEY, $merged );
 	}
 
@@ -83,9 +94,36 @@ class Atum_Mailer_Settings_Repository {
 		$stored  = get_option( self::OPTION_KEY, array() );
 		$options = wp_parse_args( is_array( $stored ) ? $stored : array(), $this->default_options() );
 		$token   = (string) get_option( self::TOKEN_OPTION_KEY, '' );
+		$webhook_secret = (string) get_option( self::WEBHOOK_SECRET_OPTION_KEY, '' );
+
+		if ( '' === $token && ! empty( $options['postmark_server_token'] ) ) {
+			$legacy = sanitize_text_field( (string) $options['postmark_server_token'] );
+			if ( '' !== $legacy ) {
+				$token = $legacy;
+				update_option( self::TOKEN_OPTION_KEY, $token, false );
+			}
+			$options['postmark_server_token'] = '';
+			update_option( self::OPTION_KEY, $options );
+		}
+		if ( '' === $webhook_secret && ! empty( $options['postmark_webhook_secret'] ) ) {
+			$legacy_secret = sanitize_text_field( (string) $options['postmark_webhook_secret'] );
+			if ( '' !== $legacy_secret ) {
+				$webhook_secret = $legacy_secret;
+				update_option( self::WEBHOOK_SECRET_OPTION_KEY, $webhook_secret, false );
+			}
+			$options['postmark_webhook_secret'] = '';
+			update_option( self::OPTION_KEY, $options );
+		}
 
 		if ( '' !== $token ) {
 			$options['postmark_server_token'] = $token;
+		} else {
+			$options['postmark_server_token'] = '';
+		}
+		if ( '' !== $webhook_secret ) {
+			$options['postmark_webhook_secret'] = $webhook_secret;
+		} else {
+			$options['postmark_webhook_secret'] = '';
 		}
 
 		return $options;
@@ -108,7 +146,10 @@ class Atum_Mailer_Settings_Repository {
 	 * @return void
 	 */
 	public function update_raw_options( $options ) {
-		update_option( self::OPTION_KEY, wp_parse_args( $options, $this->default_options() ) );
+		$merged                            = wp_parse_args( is_array( $options ) ? $options : array(), $this->default_options() );
+		$merged['postmark_server_token']   = '';
+		$merged['postmark_webhook_secret'] = '';
+		update_option( self::OPTION_KEY, $merged );
 	}
 
 	/**
@@ -124,7 +165,7 @@ class Atum_Mailer_Settings_Repository {
 			return;
 		}
 
-		update_option( self::TOKEN_OPTION_KEY, $token );
+		update_option( self::TOKEN_OPTION_KEY, $token, false );
 	}
 
 	/**
@@ -169,16 +210,17 @@ class Atum_Mailer_Settings_Repository {
 		$output['retention_days']         = max( 1, min( 3650, (int) ( $input['retention_days'] ?? $defaults['retention_days'] ) ) );
 		$output['allow_token_reveal']     = empty( $input['allow_token_reveal'] ) ? 0 : 1;
 		$output['log_detail_mode']        = sanitize_key( (string) ( $input['log_detail_mode'] ?? $defaults['log_detail_mode'] ) );
-		$output['delivery_mode']          = sanitize_key( (string) ( $input['delivery_mode'] ?? $defaults['delivery_mode'] ) );
-		$output['fallback_to_wp_mail']    = empty( $input['fallback_to_wp_mail'] ) ? 0 : 1;
-		$output['postmark_webhook_secret'] = sanitize_text_field( (string) ( $input['postmark_webhook_secret'] ?? '' ) );
-		$output['queue_max_attempts']     = max( 1, min( 20, (int) ( $input['queue_max_attempts'] ?? $defaults['queue_max_attempts'] ) ) );
+			$output['delivery_mode']          = sanitize_key( (string) ( $input['delivery_mode'] ?? $defaults['delivery_mode'] ) );
+			$output['fallback_to_wp_mail']    = empty( $input['fallback_to_wp_mail'] ) ? 0 : 1;
+			$output['postmark_webhook_secret'] = '';
+			$output['webhook_require_signature'] = empty( $input['webhook_require_signature'] ) ? 0 : 1;
+			$output['webhook_replay_window_seconds'] = max( 30, min( DAY_IN_SECONDS, (int) ( $input['webhook_replay_window_seconds'] ?? $defaults['webhook_replay_window_seconds'] ) ) );
+			$output['webhook_rate_limit_per_minute'] = max( 1, min( 5000, (int) ( $input['webhook_rate_limit_per_minute'] ?? $defaults['webhook_rate_limit_per_minute'] ) ) );
+			$output['queue_max_attempts']     = max( 1, min( 20, (int) ( $input['queue_max_attempts'] ?? $defaults['queue_max_attempts'] ) ) );
 		$output['queue_retry_base_delay'] = max( 5, min( 3600, (int) ( $input['queue_retry_base_delay'] ?? $defaults['queue_retry_base_delay'] ) ) );
 		$output['queue_retry_max_delay']  = max( 60, min( DAY_IN_SECONDS, (int) ( $input['queue_retry_max_delay'] ?? $defaults['queue_retry_max_delay'] ) ) );
 
-		$output['postmark_server_token'] = array_key_exists( 'postmark_server_token', $input )
-			? sanitize_text_field( (string) $input['postmark_server_token'] )
-			: (string) $current['postmark_server_token'];
+		$output['postmark_server_token'] = '';
 		$output['token_verified']    = array_key_exists( 'token_verified', $input ) ? ( empty( $input['token_verified'] ) ? 0 : 1 ) : ( empty( $current['token_verified'] ) ? 0 : 1 );
 		$output['token_verified_at'] = array_key_exists( 'token_verified_at', $input ) ? sanitize_text_field( (string) $input['token_verified_at'] ) : sanitize_text_field( (string) $current['token_verified_at'] );
 		$output['token_server_name'] = array_key_exists( 'token_server_name', $input ) ? sanitize_text_field( (string) $input['token_server_name'] ) : sanitize_text_field( (string) $current['token_server_name'] );
@@ -230,6 +272,23 @@ class Atum_Mailer_Settings_Repository {
 
 		if ( $output['queue_retry_max_delay'] < $output['queue_retry_base_delay'] ) {
 			$output['queue_retry_max_delay'] = $output['queue_retry_base_delay'];
+		}
+
+		$current_webhook_secret = (string) get_option( self::WEBHOOK_SECRET_OPTION_KEY, '' );
+		$webhook_secret         = $current_webhook_secret;
+		$clear_webhook_secret   = ! empty( $input['postmark_webhook_secret_clear'] );
+		if ( $clear_webhook_secret ) {
+			$webhook_secret = '';
+		} elseif ( array_key_exists( 'postmark_webhook_secret', $input ) ) {
+			$incoming_secret = sanitize_text_field( (string) $input['postmark_webhook_secret'] );
+			if ( '' !== trim( $incoming_secret ) ) {
+				$webhook_secret = $incoming_secret;
+			}
+		}
+		if ( '' === trim( $webhook_secret ) ) {
+			delete_option( self::WEBHOOK_SECRET_OPTION_KEY );
+		} else {
+			update_option( self::WEBHOOK_SECRET_OPTION_KEY, $webhook_secret, false );
 		}
 
 		return $output;

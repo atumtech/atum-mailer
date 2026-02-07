@@ -9,9 +9,12 @@ class Atum_Test_Configurable_Postmark_Client extends Atum_Mailer_Postmark_Client
 	public $responses = array();
 	/** @var int */
 	public $send_calls = 0;
+	/** @var array<string, mixed> */
+	public $last_payload = array();
 
 	public function send_email( $payload, $token, $atts = array(), $options = array() ) {
-		unset( $payload, $token, $atts, $options );
+		$this->last_payload = is_array( $payload ) ? $payload : array();
+		unset( $token, $atts, $options );
 		$this->send_calls++;
 		if ( empty( $this->responses ) ) {
 			return new WP_Error( 'no_response', 'No response configured.', array( 'retryable' => true ) );
@@ -404,5 +407,79 @@ final class MailInterceptorTest extends TestCase {
 
 		$this->assertSame( array(), $this->settings->get_queue_jobs() );
 		$this->assertSame( 'dead_letter', $GLOBALS['wpdb']->last_update_data['status'] );
+	}
+
+	public function test_from_header_supports_html_entity_encoded_sender_name(): void {
+		$options                          = $this->settings->default_options();
+		$options['enabled']               = 1;
+		$options['postmark_server_token'] = 'token-abc';
+		$options['delivery_mode']         = 'immediate';
+		$options['force_from']            = 0;
+		$options['from_email']            = 'fallback@example.com';
+		$this->settings->set_token( 'token-abc' );
+		$this->settings->update_raw_options( $options );
+
+		$this->client->responses[] = array(
+			'status_code' => 200,
+			'body'        => '{"MessageID":"abc"}',
+			'decoded'     => array( 'MessageID' => 'abc' ),
+			'message_id'  => 'abc',
+			'response'    => array( 'response' => array( 'code' => 200 ), 'body' => '{}' ),
+		);
+
+		$result = $this->interceptor->maybe_send_with_postmark(
+			null,
+			array(
+				'to'          => 'recipient@example.com',
+				'subject'     => 'Header Parse Test',
+				'message'     => 'Body',
+				'headers'     => array( 'From: James Plumbing &amp; Heating &lt;dispatch@example.com&gt;' ),
+				'attachments' => array(),
+			)
+		);
+
+		$this->assertTrue( $result );
+		$this->assertSame( '"James Plumbing & Heating" <dispatch@example.com>', (string) ( $this->client->last_payload['From'] ?? '' ) );
+	}
+
+	public function test_invalid_wp_mail_from_filter_does_not_override_valid_sender(): void {
+		$options                          = $this->settings->default_options();
+		$options['enabled']               = 1;
+		$options['postmark_server_token'] = 'token-abc';
+		$options['delivery_mode']         = 'immediate';
+		$options['force_from']            = 1;
+		$options['from_email']            = 'sender@example.com';
+		$options['from_name']             = 'Sender Name';
+		$this->settings->set_token( 'token-abc' );
+		$this->settings->update_raw_options( $options );
+
+		add_filter(
+			'wp_mail_from',
+			static function () {
+				return '&amp;';
+			}
+		);
+
+		$this->client->responses[] = array(
+			'status_code' => 200,
+			'body'        => '{"MessageID":"abc"}',
+			'decoded'     => array( 'MessageID' => 'abc' ),
+			'message_id'  => 'abc',
+			'response'    => array( 'response' => array( 'code' => 200 ), 'body' => '{}' ),
+		);
+
+		$result = $this->interceptor->maybe_send_with_postmark(
+			null,
+			array(
+				'to'          => 'recipient@example.com',
+				'subject'     => 'Filter Test',
+				'message'     => 'Body',
+				'headers'     => array(),
+				'attachments' => array(),
+			)
+		);
+
+		$this->assertTrue( $result );
+		$this->assertSame( '"Sender Name" <sender@example.com>', (string) ( $this->client->last_payload['From'] ?? '' ) );
 	}
 }

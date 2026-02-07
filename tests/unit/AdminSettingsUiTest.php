@@ -37,11 +37,14 @@ final class AdminSettingsUiTest extends TestCase {
 		$this->assertStringContainsString( 'Advanced Settings', $html );
 		$this->assertStringContainsString( 'Security & Privacy', $html );
 		$this->assertStringContainsString( 'Queue Tuning', $html );
-		$this->assertStringContainsString( 'Retention & Webhooks', $html );
-		$this->assertStringContainsString( 'atum-settings-layout', $html );
-		$this->assertStringContainsString( 'atum-settings-disclosure', $html );
-		$this->assertStringContainsString( 'atum-field-delivery-mode', $html );
-	}
+			$this->assertStringContainsString( 'Retention & Webhooks', $html );
+			$this->assertStringContainsString( 'atum-settings-layout', $html );
+			$this->assertStringContainsString( 'atum-settings-disclosure', $html );
+			$this->assertStringContainsString( 'atum-field-delivery-mode', $html );
+			$this->assertStringContainsString( 'atum-field-webhook-require-signature', $html );
+			$this->assertStringContainsString( 'atum-field-webhook-replay-window', $html );
+			$this->assertStringContainsString( 'atum-field-webhook-rate-limit', $html );
+		}
 
 	public function test_inline_notice_renders_action_link_when_present(): void {
 		$_GET['tab']                      = 'settings';

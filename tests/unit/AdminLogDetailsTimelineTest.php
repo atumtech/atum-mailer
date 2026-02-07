@@ -66,4 +66,43 @@ final class AdminLogDetailsTimelineTest extends TestCase {
 			$this->assertSame( 'created', (string) $e->payload['data']['timeline'][0]['type'] );
 		}
 	}
+
+	public function test_get_log_details_in_metadata_mode_returns_payload_hints_when_raw_data_is_missing(): void {
+		$GLOBALS['wpdb']->rows[26] = array(
+			'id'                 => 26,
+			'created_at'         => '2025-01-10 11:00:00',
+			'updated_at'         => '2025-01-10 11:05:00',
+			'mail_to'            => wp_json_encode( array( 'recipient@example.com' ) ),
+			'subject'            => 'Metadata mode',
+			'status'             => 'failed',
+			'provider'           => 'postmark',
+			'http_status'        => 422,
+			'delivery_mode'      => 'immediate',
+			'attempt_count'      => 1,
+			'next_attempt_at'    => '',
+			'last_error_code'    => 'http_422',
+			'provider_message_id'=> '',
+			'webhook_event_type' => '',
+			'error_message'      => 'Provider rejected From header',
+			'message'            => '',
+			'headers'            => '',
+			'attachments'        => '',
+			'request_payload'    => '',
+			'response_body'      => '',
+		);
+
+		$_POST = array(
+			'nonce'  => 'nonce:atum_mailer_admin_nonce',
+			'log_id' => 26,
+		);
+
+		try {
+			$this->admin->handle_get_log_details();
+			$this->fail( 'Expected JSON response exception.' );
+		} catch ( Atum_Test_Json_Response_Exception $e ) {
+			$this->assertTrue( $e->success );
+			$this->assertStringContainsString( 'metadata mode', (string) $e->payload['data']['request_payload'] );
+			$this->assertStringContainsString( 'metadata mode', (string) $e->payload['data']['headers'] );
+		}
+	}
 }

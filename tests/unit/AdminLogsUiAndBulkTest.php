@@ -64,15 +64,20 @@ final class AdminLogsUiAndBulkTest extends TestCase {
 		$this->assertStringContainsString( 'name="date_from"', $html );
 		$this->assertStringContainsString( 'name="date_to"', $html );
 		$this->assertStringContainsString( 'name="provider_message_id"', $html );
+		$this->assertStringContainsString( 'data-atum-log-filter-toggle="1"', $html );
+		$this->assertStringContainsString( 'atum-logs-filter-panel', $html );
 		$this->assertStringContainsString( 'atum-logs-bulk-form', $html );
 		$this->assertStringContainsString( 'Retry selected', $html );
 		$this->assertStringContainsString( 'Export selected', $html );
 		$this->assertStringContainsString( 'Purge filtered', $html );
 		$this->assertStringContainsString( 'atum-log-select-all', $html );
+		$this->assertStringContainsString( 'check-column--center', $html );
 		$this->assertStringContainsString( 'atum-event-chip', $html );
 		$this->assertStringContainsString( 'Opened', $html );
 		$this->assertStringContainsString( 'Delivery Timeline', $html );
 		$this->assertStringContainsString( 'Resend With Overrides', $html );
+		$this->assertStringContainsString( 'data-atum-danger-form="1"', $html );
+		$this->assertStringContainsString( 'atum-danger-modal', $html );
 	}
 
 	public function test_bulk_retry_selected_requires_selection(): void {

@@ -11,6 +11,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 
 delete_option( 'atum_mailer_options' );
 delete_option( 'atum_mailer_postmark_token' );
+delete_option( 'atum_mailer_webhook_secret' );
 delete_option( 'atum_mailer_db_version' );
 delete_option( 'atum_mailer_last_cleanup' );
 delete_option( 'atum_mailer_queue_jobs' );

@@ -24,7 +24,9 @@ class Atum_Mailer_Postmark_Client implements Atum_Mailer_Delivery_Provider_Inter
 	 * @return array<string, mixed>|WP_Error
 	 */
 	public function verify_token( $token ) {
-		$endpoint = apply_filters( 'atum_mailer_postmark_verify_endpoint', 'https://api.postmarkapp.com/server' );
+		$default_endpoint = 'https://api.postmarkapp.com/server';
+		$endpoint         = apply_filters( 'atum_mailer_postmark_verify_endpoint', $default_endpoint );
+		$endpoint         = $this->normalize_endpoint( $endpoint, $default_endpoint );
 		$response = wp_remote_get(
 			$endpoint,
 			array(
@@ -97,7 +99,9 @@ class Atum_Mailer_Postmark_Client implements Atum_Mailer_Delivery_Provider_Inter
 	 * @return array<int, string>|WP_Error
 	 */
 	public function fetch_message_streams( $token ) {
-		$endpoint = apply_filters( 'atum_mailer_postmark_streams_endpoint', 'https://api.postmarkapp.com/message-streams?count=500' );
+		$default_endpoint = 'https://api.postmarkapp.com/message-streams?count=500';
+		$endpoint         = apply_filters( 'atum_mailer_postmark_streams_endpoint', $default_endpoint );
+		$endpoint         = $this->normalize_endpoint( $endpoint, $default_endpoint );
 		$response = wp_remote_get(
 			$endpoint,
 			array(
@@ -155,7 +159,9 @@ class Atum_Mailer_Postmark_Client implements Atum_Mailer_Delivery_Provider_Inter
 	 * @return array<string, mixed>|WP_Error
 	 */
 	public function send_email( $payload, $token, $atts = array(), $options = array() ) {
-		$endpoint = apply_filters( 'atum_mailer_postmark_endpoint', 'https://api.postmarkapp.com/email', $atts, $options );
+		$default_endpoint = 'https://api.postmarkapp.com/email';
+		$endpoint         = apply_filters( 'atum_mailer_postmark_endpoint', $default_endpoint, $atts, $options );
+		$endpoint         = $this->normalize_endpoint( $endpoint, $default_endpoint );
 
 		$response = wp_remote_post(
 			$endpoint,
@@ -303,5 +309,55 @@ class Atum_Mailer_Postmark_Client implements Atum_Mailer_Delivery_Provider_Inter
 			'Content-Type'            => 'application/json',
 			'X-Postmark-Server-Token' => $token,
 		);
+	}
+
+	/**
+	 * Normalize endpoint to trusted HTTPS host.
+	 *
+	 * @param string $candidate Candidate URL.
+	 * @param string $fallback Fallback URL.
+	 * @return string
+	 */
+	private function normalize_endpoint( $candidate, $fallback ) {
+		$candidate = trim( (string) $candidate );
+		if ( '' === $candidate ) {
+			return $fallback;
+		}
+
+		$parts = wp_parse_url( $candidate );
+		if ( ! is_array( $parts ) ) {
+			return $fallback;
+		}
+
+		$scheme = strtolower( (string) ( $parts['scheme'] ?? '' ) );
+		$host   = strtolower( (string) ( $parts['host'] ?? '' ) );
+		if ( 'https' !== $scheme || '' === $host ) {
+			return $fallback;
+		}
+
+		$default_hosts = array( 'api.postmarkapp.com' );
+		$allowed_hosts = apply_filters( 'atum_mailer_postmark_allowed_hosts', $default_hosts );
+		$allowed_hosts = is_array( $allowed_hosts ) ? $allowed_hosts : $default_hosts;
+		$allowed_hosts = array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						static function ( $allowed ) {
+							return strtolower( trim( (string) $allowed ) );
+						},
+						$allowed_hosts
+					),
+					static function ( $allowed ) {
+						return '' !== $allowed;
+					}
+				)
+			)
+		);
+
+		if ( empty( $allowed_hosts ) || ! in_array( $host, $allowed_hosts, true ) ) {
+			return $fallback;
+		}
+
+		return $candidate;
 	}
 }

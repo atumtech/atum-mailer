@@ -4,7 +4,7 @@ Tags: email, postmark, mailer, transactional-email
 Requires at least: 6.5
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 0.4.5
+Stable tag: 0.5.0
 License: MIT
 License URI: https://opensource.org/license/mit/
 
@@ -96,6 +96,10 @@ Filters:
 * `atum_mailer_github_tested_up_to`
 
 == Changelog ==
+
+= 0.5.0 =
+* Hardened GitHub release packaging with version-alignment validation across tag, plugin header, and readme.
+* Added reusable local/CI release build script for WordPress plugin ZIP creation.
 
 = 0.4.5 =
 * Version bump and rebuilt package for latest updates.

@@ -2,7 +2,7 @@
 
 atum.mailer is a WordPress plugin by [atum.tech](https://atum.tech) that routes `wp_mail()` through Postmark.
 
-## Highlights in 0.4.5
+## Highlights in 0.5.0
 
 - Modular architecture (`Bootstrap`, `AdminController`, `PostmarkClient`, `MailInterceptor`, `LogRepository`, `SettingsRepository`)
 - Safer token reveal flow (disabled by default, explicit confirmation, short-lived reveal session)
@@ -46,7 +46,7 @@ Set a GitHub token (with `contents:read` for the repo) so WordPress can request 
 
 ```php
 define( 'ATUM_MAILER_GITHUB_REPO', 'your-org/atum-mailer' );
-define( 'ATUM_MAILER_GITHUB_TOKEN', 'ghp_xxx' );
+define( 'ATUM_MAILER_GITHUB_TOKEN', 'your_github_token_here' );
 define( 'ATUM_MAILER_GITHUB_RELEASE_ASSET', 'atum-mailer.zip' );
 ```
 
@@ -69,8 +69,9 @@ Two workflows are included:
 Tag example:
 
 ```bash
-git tag v0.4.5
-git push origin v0.4.5
+npm run verify:release -- v0.5.0
+git tag v0.5.0
+git push origin v0.5.0
 ```
 
 ## Operations Docs
