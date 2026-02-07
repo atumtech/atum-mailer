@@ -4,7 +4,7 @@ Tags: email, postmark, mailer, transactional-email
 Requires at least: 6.5
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 0.5.0
+Stable tag: 0.5.3
 License: MIT
 License URI: https://opensource.org/license/mit/
 
@@ -96,6 +96,13 @@ Filters:
 * `atum_mailer_github_tested_up_to`
 
 == Changelog ==
+
+= 0.5.1 =
+* Complete UI/UX overhaul with modern frosted-glass design system.
+* Added SVG icons to dashboard KPI cards and tab navigation.
+* Enhanced JavaScript with toast notifications, smooth scrolling, skeleton loading states, and improved animations.
+* Improved accessibility with better focus management and ARIA attributes.
+* Added visual feedback for selected table rows and chip removal animations.
 
 = 0.5.0 =
 * Hardened GitHub release packaging with version-alignment validation across tag, plugin header, and readme.

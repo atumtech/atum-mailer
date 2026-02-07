@@ -49,6 +49,8 @@ final class AdminDashboardReadinessTest extends TestCase {
 		$this->assertStringContainsString( 'Verify sender', $html );
 		$this->assertStringContainsString( 'Check domain DNS', $html );
 		$this->assertStringContainsString( 'SPF: Missing', $html );
+		$this->assertStringContainsString( '#atum-settings-dns', $html );
+		$this->assertStringContainsString( 'View DNS Health', $html );
 		$this->assertStringContainsString( 'Open Token Settings', $html );
 		$this->assertStringContainsString( '#atum-field-postmark-token', $html );
 		$this->assertStringContainsString( 'Queue Operations', $html );

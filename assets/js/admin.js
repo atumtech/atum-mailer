@@ -1,6 +1,8 @@
 (function () {
   "use strict";
 
+  /* ─── Helpers ─── */
+
   function postAjax(data) {
     var body = new URLSearchParams(data).toString();
     return fetch(atumMailerAdmin.ajaxUrl, {
@@ -19,70 +21,112 @@
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
 
+  /** Smooth-scroll to an element with offset for WP admin bar. */
+  function smoothScrollTo(el) {
+    if (!el) return;
+    var adminBar = document.getElementById("wpadminbar");
+    var offset = adminBar ? adminBar.offsetHeight + 16 : 16;
+    var top = el.getBoundingClientRect().top + window.pageYOffset - offset;
+    window.scrollTo({ top: top, behavior: "smooth" });
+  }
+
+  /** Show a brief toast notification. */
+  function showToast(message, tone) {
+    var existing = document.querySelector(".atum-toast");
+    if (existing) existing.remove();
+    var toast = document.createElement("div");
+    toast.className = "atum-toast atum-toast--" + (tone || "info");
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(function () {
+      toast.classList.add("is-visible");
+    });
+    setTimeout(function () {
+      toast.classList.remove("is-visible");
+      setTimeout(function () { toast.remove(); }, 300);
+    }, 3200);
+  }
+
+  /* ─── Settings Section Nav (smooth scroll) ─── */
+
+  function initSettingsNav() {
+    var navLinks = document.querySelectorAll(".atum-settings-sidebar-nav a[href^='#']");
+    navLinks.forEach(function (link) {
+      link.addEventListener("click", function (e) {
+        var targetId = link.getAttribute("href");
+        if (!targetId || targetId.charAt(0) !== "#") return;
+        var target = document.getElementById(targetId.substring(1));
+        if (!target) return;
+        e.preventDefault();
+        // If target is inside a closed <details>, open it first
+        var details = target.closest("details");
+        if (details && !details.open) {
+          details.open = true;
+        }
+        smoothScrollTo(target);
+        // Brief highlight
+        target.classList.add("atum-highlight");
+        setTimeout(function () { target.classList.remove("atum-highlight"); }, 1200);
+      });
+    });
+  }
+
+  /* ─── From Builder ─── */
+
   function initFromBuilder() {
     var field = document.getElementById("atum-from-email-field");
-    if (!field) {
-      return;
-    }
+    if (!field) return;
 
     var quickButtons = document.querySelectorAll(".atum-quick-fill-email");
     quickButtons.forEach(function (btn) {
       btn.addEventListener("click", function () {
         var value = btn.getAttribute("data-email") || "";
-        if (!value) {
-          return;
-        }
+        if (!value) return;
         field.value = value;
         field.dispatchEvent(new Event("change", { bubbles: true }));
+        showToast(value + " applied", "success");
       });
     });
 
     var buildBtn = document.getElementById("atum-from-build");
     var localPart = document.getElementById("atum-from-local-part");
-    if (!buildBtn || !localPart) {
-      return;
-    }
+    if (!buildBtn || !localPart) return;
 
     buildBtn.addEventListener("click", function () {
       var root = buildBtn.closest(".atum-from-builder__compose");
-      if (!root) {
-        return;
-      }
+      if (!root) return;
       var domainNode = root.querySelector("span");
       var domain = "";
       if (domainNode) {
         domain = (domainNode.textContent || "").replace(/^@/, "").trim();
       }
       var local = (localPart.value || "").trim();
-      if (!local || !domain) {
-        return;
-      }
+      if (!local || !domain) return;
       field.value = local + "@" + domain;
       field.dispatchEvent(new Event("change", { bubbles: true }));
+      showToast(field.value + " applied", "success");
     });
   }
 
+  /* ─── Email Adder ─── */
+
   function initEmailAdder() {
     var root = document.getElementById("atum-test-email-adder");
-    if (!root) {
-      return;
-    }
+    if (!root) return;
 
     var chipsNode = document.getElementById("atum-test-email-chips");
     var input = document.getElementById("atum_test_email_input");
     var hidden = document.getElementById("atum_test_email");
     var addBtn = document.getElementById("atum-test-email-add");
     var feedback = document.getElementById("atum-test-email-feedback");
-    if (!chipsNode || !input || !hidden || !addBtn) {
-      return;
-    }
+    if (!chipsNode || !input || !hidden || !addBtn) return;
 
     var emails = [];
 
     function setFeedback(message, isError) {
-      if (!feedback) {
-        return;
-      }
+      if (!feedback) return;
       feedback.textContent = message || "";
       feedback.classList.toggle("is-success", !isError && !!message);
       feedback.classList.toggle("is-error", !!isError && !!message);
@@ -99,24 +143,23 @@
         chip.className = "atum-email-chip";
         chip.setAttribute("data-email", email);
         chip.innerHTML =
-          '<span class="atum-email-chip__text"></span><button type="button" class="atum-email-chip__remove"><span aria-hidden="true">&times;</span></button>';
+          '<span class="atum-email-chip__text"></span><button type="button" class="atum-email-chip__remove" aria-label="Remove"><span aria-hidden="true">&times;</span></button>';
         var text = chip.querySelector(".atum-email-chip__text");
         var removeBtn = chip.querySelector(".atum-email-chip__remove");
-        if (text) {
-          text.textContent = email;
-        }
+        if (text) text.textContent = email;
         if (removeBtn) {
           removeBtn.setAttribute(
             "aria-label",
             (atumMailerAdmin.i18n.removeRecipient || "Remove") + " " + email
           );
           removeBtn.addEventListener("click", function () {
-            emails = emails.filter(function (item) {
-              return item !== email;
-            });
-            syncHidden();
-            renderChips();
-            setFeedback(atumMailerAdmin.i18n.recipientRemoved, false);
+            chip.classList.add("atum-email-chip--removing");
+            setTimeout(function () {
+              emails = emails.filter(function (item) { return item !== email; });
+              syncHidden();
+              renderChips();
+              setFeedback(atumMailerAdmin.i18n.recipientRemoved, false);
+            }, 180);
           });
         }
         chipsNode.appendChild(chip);
@@ -125,14 +168,8 @@
 
     function addEmail(raw) {
       var email = (raw || "").trim().toLowerCase();
-      if (!email) {
-        setFeedback("", false);
-        return;
-      }
-      if (!isValidEmail(email)) {
-        setFeedback(atumMailerAdmin.i18n.invalidEmail, true);
-        return;
-      }
+      if (!email) { setFeedback("", false); return; }
+      if (!isValidEmail(email)) { setFeedback(atumMailerAdmin.i18n.invalidEmail, true); return; }
       if (emails.indexOf(email) !== -1) {
         setFeedback(atumMailerAdmin.i18n.duplicateEmail, true);
         input.value = "";
@@ -146,83 +183,56 @@
     }
 
     if (hidden.value) {
-      hidden.value
-        .split(/[\s,;]+/)
-        .map(function (item) {
-          return item.trim().toLowerCase();
-        })
-        .filter(function (item) {
-          return item && isValidEmail(item);
-        })
-        .forEach(function (item) {
-          if (emails.indexOf(item) === -1) {
-            emails.push(item);
-          }
-        });
+      hidden.value.split(/[\s,;]+/).map(function (item) {
+        return item.trim().toLowerCase();
+      }).filter(function (item) {
+        return item && isValidEmail(item);
+      }).forEach(function (item) {
+        if (emails.indexOf(item) === -1) emails.push(item);
+      });
       syncHidden();
       renderChips();
     }
 
-    addBtn.addEventListener("click", function () {
-      addEmail(input.value);
-    });
-
+    addBtn.addEventListener("click", function () { addEmail(input.value); });
     input.addEventListener("keydown", function (event) {
-      if ("Enter" === event.key) {
-        event.preventDefault();
-        addEmail(input.value);
-      }
+      if ("Enter" === event.key) { event.preventDefault(); addEmail(input.value); }
     });
   }
+
+  /* ─── Tabs Keyboard Navigation ─── */
 
   function initTabsKeyboardNavigation() {
     var tabs = Array.prototype.slice.call(
       document.querySelectorAll(".atum-mailer-tab[role='tab']")
     );
-    if (!tabs.length) {
-      return;
-    }
+    if (!tabs.length) return;
 
     function moveFocus(current, step) {
       var index = tabs.indexOf(current);
-      if (index < 0) {
-        return;
-      }
+      if (index < 0) return;
       var next = index + step;
-      if (next < 0) {
-        next = tabs.length - 1;
-      }
-      if (next >= tabs.length) {
-        next = 0;
-      }
+      if (next < 0) next = tabs.length - 1;
+      if (next >= tabs.length) next = 0;
       tabs[next].focus();
     }
 
     tabs.forEach(function (tab) {
       tab.addEventListener("keydown", function (event) {
-        if ("ArrowRight" === event.key) {
-          event.preventDefault();
-          moveFocus(tab, 1);
-        } else if ("ArrowLeft" === event.key) {
-          event.preventDefault();
-          moveFocus(tab, -1);
-        } else if ("Home" === event.key) {
-          event.preventDefault();
-          tabs[0].focus();
-        } else if ("End" === event.key) {
-          event.preventDefault();
-          tabs[tabs.length - 1].focus();
-        }
+        if ("ArrowRight" === event.key) { event.preventDefault(); moveFocus(tab, 1); }
+        else if ("ArrowLeft" === event.key) { event.preventDefault(); moveFocus(tab, -1); }
+        else if ("Home" === event.key) { event.preventDefault(); tabs[0].focus(); }
+        else if ("End" === event.key) { event.preventDefault(); tabs[tabs.length - 1].focus(); }
       });
     });
   }
 
+  /* ─── Token Reveal ─── */
+
   function initTokenReveal() {
     var btn = document.getElementById("atum-token-reveal");
     var field = document.getElementById("atum-postmark-token-field");
-    if (!btn || !field) {
-      return;
-    }
+    if (!btn || !field) return;
 
     btn.addEventListener("click", function () {
       var current = btn.getAttribute("data-state") || "hidden";
@@ -235,7 +245,7 @@
       }
 
       if (!atumMailerAdmin.tokenRevealAllowed) {
-        window.alert(atumMailerAdmin.i18n.tokenRevealDisabled);
+        showToast(atumMailerAdmin.i18n.tokenRevealDisabled, "warning");
         return;
       }
 
@@ -247,29 +257,22 @@
       }
 
       btn.disabled = true;
+      btn.textContent = atumMailerAdmin.i18n.loading || "Loading…";
       postAjax({
         action: "atum_mailer_reveal_token",
         nonce: atumMailerAdmin.nonce,
         stage: "request",
       })
         .then(function (json) {
-          if (!json || !json.success || !json.data) {
-            throw new Error(atumMailerAdmin.i18n.revealError);
-          }
-
+          if (!json || !json.success || !json.data) throw new Error(atumMailerAdmin.i18n.revealError);
           if (false === json.data.allowed) {
             field.value = json.data.masked || field.value;
             throw new Error(json.data.message || atumMailerAdmin.i18n.tokenRevealDisabled);
           }
-
           if (!json.data.needsConfirm || !json.data.session || !json.data.freshNonce) {
             throw new Error(atumMailerAdmin.i18n.revealError);
           }
-
-          if (!window.confirm(atumMailerAdmin.i18n.confirmReveal)) {
-            return null;
-          }
-
+          if (!window.confirm(atumMailerAdmin.i18n.confirmReveal)) return null;
           return postAjax({
             action: "atum_mailer_reveal_token",
             nonce: atumMailerAdmin.nonce,
@@ -279,32 +282,32 @@
           });
         })
         .then(function (json) {
-          if (!json) {
-            return;
-          }
-          if (!json.success || !json.data || !json.data.token) {
-            throw new Error(atumMailerAdmin.i18n.revealError);
-          }
+          if (!json) return;
+          if (!json.success || !json.data || !json.data.token) throw new Error(atumMailerAdmin.i18n.revealError);
           field.type = "text";
           field.value = json.data.token;
           btn.setAttribute("data-loaded", "1");
           btn.setAttribute("data-state", "shown");
           btn.textContent = atumMailerAdmin.i18n.hideKey;
+          showToast("Token revealed", "success");
         })
         .catch(function (err) {
-          window.alert((err && err.message) || atumMailerAdmin.i18n.revealError);
+          showToast((err && err.message) || atumMailerAdmin.i18n.revealError, "error");
         })
         .finally(function () {
           btn.disabled = false;
+          if (btn.getAttribute("data-state") !== "shown") {
+            btn.textContent = atumMailerAdmin.i18n.showKey || "Show";
+          }
         });
     });
   }
 
+  /* ─── Log Drawer ─── */
+
   function initLogDrawer() {
     var drawer = document.getElementById("atum-log-drawer");
-    if (!drawer) {
-      return;
-    }
+    if (!drawer) return;
 
     var panel = drawer.querySelector(".atum-log-drawer__panel");
     var buttons = document.querySelectorAll(".atum-log-view");
@@ -314,12 +317,11 @@
     var resendTo = drawer.querySelector("[data-atum-resend-to='1']");
     var resendSubject = drawer.querySelector("[data-atum-resend-subject='1']");
     var resendMode = drawer.querySelector("[data-atum-resend-mode='1']");
+    var bodyEl = drawer.querySelector(".atum-log-drawer__body");
     var lastTrigger = null;
 
     function focusableNodes() {
-      if (!panel) {
-        return [];
-      }
+      if (!panel) return [];
       return Array.prototype.slice.call(
         panel.querySelectorAll(
           "a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])"
@@ -331,9 +333,7 @@
       drawer.classList.remove("is-open");
       drawer.setAttribute("aria-hidden", "true");
       document.body.classList.remove("atum-drawer-open");
-      if (lastTrigger && "function" === typeof lastTrigger.focus) {
-        lastTrigger.focus();
-      }
+      if (lastTrigger && "function" === typeof lastTrigger.focus) lastTrigger.focus();
       lastTrigger = null;
     }
 
@@ -351,17 +351,13 @@
 
     function setField(name, value) {
       var node = drawer.querySelector("[data-atum-field='" + name + "']");
-      if (!node) {
-        return;
-      }
+      if (!node) return;
       node.textContent = value || "";
     }
 
     function renderTimeline(items) {
       var node = drawer.querySelector("[data-atum-field='timeline']");
-      if (!node) {
-        return;
-      }
+      if (!node) return;
       node.innerHTML = "";
 
       if (!Array.isArray(items) || !items.length) {
@@ -373,8 +369,8 @@
       }
 
       items.forEach(function (item) {
-        var li = document.createElement("li");
         var tone = (item && item.tone) || "muted";
+        var li = document.createElement("li");
         li.className = "atum-log-timeline__item";
         li.innerHTML =
           '<span class="atum-log-timeline__dot"></span><div class="atum-log-timeline__content"><div class="atum-log-timeline__head"><strong></strong><span class="atum-log-timeline__time"></span></div><p class="atum-log-timeline__detail"></p></div>';
@@ -384,37 +380,22 @@
         var time = li.querySelector(".atum-log-timeline__time");
         var detail = li.querySelector(".atum-log-timeline__detail");
 
-        if (dot) {
-          dot.classList.add("is-" + tone);
-        }
-        if (label) {
-          label.textContent = (item && item.label) || atumMailerAdmin.i18n.unknownLabel;
-        }
-        if (time) {
-          time.textContent = (item && item.time) || "";
-        }
+        if (dot) dot.classList.add("is-" + tone);
+        if (label) label.textContent = (item && item.label) || atumMailerAdmin.i18n.unknownLabel;
+        if (time) time.textContent = (item && item.time) || "";
         if (detail) {
           detail.textContent = (item && item.detail) || "";
           detail.style.display = detail.textContent ? "block" : "none";
         }
-
         node.appendChild(li);
       });
     }
 
     function fillDetails(data) {
-      if (resendLogId) {
-        resendLogId.value = data.id || "";
-      }
-      if (resendTo) {
-        resendTo.value = data.recipient_csv || "";
-      }
-      if (resendSubject) {
-        resendSubject.value = data.subject || "";
-      }
-      if (resendMode) {
-        resendMode.value = data.delivery_mode || "";
-      }
+      if (resendLogId) resendLogId.value = data.id || "";
+      if (resendTo) resendTo.value = data.recipient_csv || "";
+      if (resendSubject) resendSubject.value = data.subject || "";
+      if (resendMode) resendMode.value = data.delivery_mode || "";
 
       setField("subject", data.subject || "");
       setField("status", data.status || atumMailerAdmin.i18n.unknownLabel);
@@ -434,23 +415,21 @@
       setField("last_error_code", data.last_error_code || "-");
       setField("webhook_event_type", data.webhook_event_type || "-");
       renderTimeline(data.timeline || []);
+
+      // Remove skeleton, reveal content
+      if (bodyEl) {
+        bodyEl.classList.remove("is-loading");
+        bodyEl.classList.add("is-loaded");
+      }
     }
 
-    function loadingState() {
-      if (resendLogId) {
-        resendLogId.value = "";
-      }
-      if (resendTo) {
-        resendTo.value = "";
-      }
-      if (resendSubject) {
-        resendSubject.value = "";
-      }
-      if (resendMode) {
-        resendMode.value = "";
-      }
+    function showSkeleton() {
+      if (resendLogId) resendLogId.value = "";
+      if (resendTo) resendTo.value = "";
+      if (resendSubject) resendSubject.value = "";
+      if (resendMode) resendMode.value = "";
 
-      setField("subject", atumMailerAdmin.i18n.loading);
+      setField("subject", "");
       setField("status", "");
       setField("created_at", "");
       setField("to", "");
@@ -468,6 +447,11 @@
       setField("last_error_code", "");
       setField("webhook_event_type", "");
       renderTimeline([]);
+
+      if (bodyEl) {
+        bodyEl.classList.add("is-loading");
+        bodyEl.classList.remove("is-loaded");
+      }
     }
 
     closeButtons.forEach(function (button) {
@@ -475,44 +459,30 @@
     });
 
     document.addEventListener("keydown", function (event) {
-      if (!drawer.classList.contains("is-open")) {
-        return;
-      }
-      if ("Escape" === event.key) {
-        closeDrawer();
-        return;
-      }
-      if ("Tab" !== event.key) {
-        return;
-      }
+      if (!drawer.classList.contains("is-open")) return;
+      if ("Escape" === event.key) { closeDrawer(); return; }
+      if ("Tab" !== event.key) return;
       var focusables = focusableNodes();
       if (!focusables.length) {
-        if (panel && "function" === typeof panel.focus) {
-          panel.focus();
-          event.preventDefault();
-        }
+        if (panel && "function" === typeof panel.focus) { panel.focus(); event.preventDefault(); }
         return;
       }
       var first = focusables[0];
       var last = focusables[focusables.length - 1];
       if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
+        event.preventDefault(); last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
+        event.preventDefault(); first.focus();
       }
     });
 
     buttons.forEach(function (button) {
       button.addEventListener("click", function () {
         var logId = button.getAttribute("data-log-id");
-        if (!logId) {
-          return;
-        }
+        if (!logId) return;
 
         openDrawer(button);
-        loadingState();
+        showSkeleton();
 
         postAjax({
           action: "atum_mailer_get_log_details",
@@ -520,31 +490,28 @@
           log_id: logId,
         })
           .then(function (json) {
-            if (!json || !json.success || !json.data) {
-              throw new Error(atumMailerAdmin.i18n.loadError);
-            }
+            if (!json || !json.success || !json.data) throw new Error(atumMailerAdmin.i18n.loadError);
             fillDetails(json.data);
           })
           .catch(function () {
             setField("subject", atumMailerAdmin.i18n.loadError);
             setField("status", "");
+            if (bodyEl) { bodyEl.classList.remove("is-loading"); bodyEl.classList.add("is-loaded"); }
           });
       });
     });
 
     if (panel) {
-      panel.addEventListener("click", function (event) {
-        event.stopPropagation();
-      });
+      panel.addEventListener("click", function (event) { event.stopPropagation(); });
     }
   }
+
+  /* ─── Logs Filter Panel ─── */
 
   function initLogsFilterPanel() {
     var panel = document.querySelector("[data-atum-log-filter-panel='1']");
     var toggle = document.querySelector("[data-atum-log-filter-toggle='1']");
-    if (!panel || !toggle) {
-      return;
-    }
+    if (!panel || !toggle) return;
 
     var closeBtn = panel.querySelector("[data-atum-log-filter-close='1']");
     var open = false;
@@ -558,35 +525,24 @@
     panel.classList.add("is-enhanced");
     setOpen(false);
 
-    toggle.addEventListener("click", function () {
-      setOpen(!open);
-    });
-
+    toggle.addEventListener("click", function () { setOpen(!open); });
     if (closeBtn) {
-      closeBtn.addEventListener("click", function () {
-        setOpen(false);
-      });
+      closeBtn.addEventListener("click", function () { setOpen(false); });
     }
 
     document.addEventListener("keydown", function (event) {
-      if (!open) {
-        return;
-      }
-      if ("Escape" === event.key) {
-        setOpen(false);
-      }
+      if (!open) return;
+      if ("Escape" === event.key) setOpen(false);
     });
 
     document.addEventListener("click", function (event) {
-      if (!open) {
-        return;
-      }
-      if (panel.contains(event.target) || toggle.contains(event.target)) {
-        return;
-      }
+      if (!open) return;
+      if (panel.contains(event.target) || toggle.contains(event.target)) return;
       setOpen(false);
     });
   }
+
+  /* ─── Danger Modal ─── */
 
   function initDangerModal() {
     var modal = document.getElementById("atum-danger-modal");
@@ -594,9 +550,7 @@
       return {
         open: function (options, onConfirm) {
           var message = (options && options.message) || "";
-          if (window.confirm(message) && "function" === typeof onConfirm) {
-            onConfirm();
-          }
+          if (window.confirm(message) && "function" === typeof onConfirm) onConfirm();
         },
       };
     }
@@ -615,109 +569,63 @@
     }
 
     function openModal(options, onConfirm) {
-      if (titleNode) {
-        titleNode.textContent =
-          (options && options.title) || "Confirm Action";
-      }
-      if (messageNode) {
-        messageNode.textContent =
-          (options && options.message) || "";
-      }
-      if (confirmBtn) {
-        confirmBtn.textContent =
-          (options && options.confirmLabel) ||
-          atumMailerAdmin.i18n.dangerConfirm ||
-          "Confirm";
-      }
-
+      if (titleNode) titleNode.textContent = (options && options.title) || "Confirm Action";
+      if (messageNode) messageNode.textContent = (options && options.message) || "";
+      if (confirmBtn) confirmBtn.textContent = (options && options.confirmLabel) || atumMailerAdmin.i18n.dangerConfirm || "Confirm";
       currentConfirm = "function" === typeof onConfirm ? onConfirm : null;
       modal.classList.add("is-open");
       modal.setAttribute("aria-hidden", "false");
-      if (confirmBtn && "function" === typeof confirmBtn.focus) {
-        confirmBtn.focus();
-      }
+      if (confirmBtn && "function" === typeof confirmBtn.focus) confirmBtn.focus();
     }
 
-    closeNodes.forEach(function (node) {
-      node.addEventListener("click", closeModal);
-    });
-
-    if (cancelBtn) {
-      cancelBtn.addEventListener("click", closeModal);
-    }
-
+    closeNodes.forEach(function (node) { node.addEventListener("click", closeModal); });
+    if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
     if (confirmBtn) {
       confirmBtn.addEventListener("click", function () {
         var cb = currentConfirm;
         closeModal();
-        if ("function" === typeof cb) {
-          cb();
-        }
+        if ("function" === typeof cb) cb();
       });
     }
 
     document.addEventListener("keydown", function (event) {
-      if (!modal.classList.contains("is-open")) {
-        return;
-      }
-      if ("Escape" === event.key) {
-        closeModal();
-      }
+      if (!modal.classList.contains("is-open")) return;
+      if ("Escape" === event.key) closeModal();
     });
 
-    return {
-      open: openModal,
-    };
+    return { open: openModal };
   }
+
+  /* ─── Danger Actions ─── */
 
   function initDangerActions(modalController) {
     var forms = Array.prototype.slice.call(
       document.querySelectorAll("[data-atum-danger-form='1']")
     );
-    if (!forms.length) {
-      return;
-    }
+    if (!forms.length) return;
 
     forms.forEach(function (form) {
       form.addEventListener("submit", function (event) {
         event.preventDefault();
-        var title =
-          form.getAttribute("data-danger-title") || "Confirm Action";
+        var title = form.getAttribute("data-danger-title") || "Confirm Action";
         var message = form.getAttribute("data-danger-message") || "";
-        var confirmLabel =
-          form.getAttribute("data-danger-confirm") ||
-          atumMailerAdmin.i18n.dangerConfirm ||
-          "Confirm";
-
-        modalController.open(
-          {
-            title: title,
-            message: message,
-            confirmLabel: confirmLabel,
-          },
-          function () {
-            form.submit();
-          }
-        );
+        var confirmLabel = form.getAttribute("data-danger-confirm") || atumMailerAdmin.i18n.dangerConfirm || "Confirm";
+        modalController.open({ title: title, message: message, confirmLabel: confirmLabel }, function () {
+          form.submit();
+        });
       });
     });
   }
 
+  /* ─── Logs Bulk Actions ─── */
+
   function initLogsBulkActions(modalController) {
     var selectAll = document.getElementById("atum-log-select-all");
-    var checks = Array.prototype.slice.call(
-      document.querySelectorAll(".atum-log-select")
-    );
-    var forms = Array.prototype.slice.call(
-      document.querySelectorAll(".atum-logs-bulk-form")
-    );
-    var countPills = Array.prototype.slice.call(
-      document.querySelectorAll("[data-atum-selected-count='1']")
-    );
+    var checks = Array.prototype.slice.call(document.querySelectorAll(".atum-log-select"));
+    var forms = Array.prototype.slice.call(document.querySelectorAll(".atum-logs-bulk-form"));
+    var countPills = Array.prototype.slice.call(document.querySelectorAll("[data-atum-selected-count='1']"));
 
-    if (!forms.length) {
-      return;
-    }
+    if (!forms.length) return;
 
     function selectedLabel(count) {
       var template = atumMailerAdmin.i18n.selectedLogsLabel || "%d selected";
@@ -725,40 +633,27 @@
     }
 
     function selectedIds() {
-      return checks
-        .filter(function (box) {
-          return !!box.checked;
-        })
-        .map(function (box) {
-          return box.value;
-        });
+      return checks.filter(function (box) { return !!box.checked; }).map(function (box) { return box.value; });
     }
 
     function syncSelectedState() {
       var selected = selectedIds().length;
       if (selectAll) {
         selectAll.checked = checks.length > 0 && selected === checks.length;
-        selectAll.indeterminate =
-          selected > 0 && selected < checks.length;
+        selectAll.indeterminate = selected > 0 && selected < checks.length;
       }
-      countPills.forEach(function (pill) {
-        pill.textContent = selectedLabel(selected);
-      });
+      countPills.forEach(function (pill) { pill.textContent = selectedLabel(selected); });
     }
 
     if (selectAll) {
       selectAll.addEventListener("change", function () {
-        checks.forEach(function (box) {
-          box.checked = !!selectAll.checked;
-        });
+        checks.forEach(function (box) { box.checked = !!selectAll.checked; });
         syncSelectedState();
       });
     }
 
     checks.forEach(function (box) {
-      box.addEventListener("change", function () {
-        syncSelectedState();
-      });
+      box.addEventListener("change", function () { syncSelectedState(); });
     });
 
     syncSelectedState();
@@ -769,53 +664,55 @@
         var action = actionSelect ? actionSelect.value : "";
         var ids = selectedIds();
         var csvInput = form.querySelector(".atum-log-ids-csv");
-        if (csvInput) {
-          csvInput.value = ids.join(",");
-        }
+        if (csvInput) csvInput.value = ids.join(",");
 
-        if (!action) {
-          event.preventDefault();
-          return;
-        }
+        if (!action) { event.preventDefault(); return; }
 
-        if ("retry_selected" === action || "export_selected" === action) {
+        if ("retry_selected" === action || "export_selected" === action || "delete_selected" === action) {
           if (!ids.length) {
             event.preventDefault();
-            window.alert(atumMailerAdmin.i18n.selectLogsRequired);
+            showToast(atumMailerAdmin.i18n.selectLogsRequired || "Select at least one log entry.", "warning");
             return;
           }
         }
 
-        if ("purge_filtered" === action) {
+        if ("delete_selected" === action) {
           event.preventDefault();
-          modalController.open(
-            {
-              title:
-                atumMailerAdmin.i18n.confirmPurgeFilteredTitle ||
-                "Purge Filtered Logs?",
-              message: atumMailerAdmin.i18n.confirmPurgeFiltered,
-              confirmLabel:
-                atumMailerAdmin.i18n.confirmPurgeButton || "Purge Logs",
-            },
-            function () {
-              form.submit();
-            }
-          );
+          var count = ids.length;
+          var deleteTitle = atumMailerAdmin.i18n.confirmDeleteSelectedTitle || "Delete Selected Logs?";
+          var deleteMessage = (atumMailerAdmin.i18n.confirmDeleteSelected || "This will permanently delete %d selected log entries. This action cannot be undone.").replace("%d", String(count));
+          var deleteConfirm = atumMailerAdmin.i18n.confirmDeleteButton || "Delete Logs";
+          modalController.open({ title: deleteTitle, message: deleteMessage, confirmLabel: deleteConfirm }, function () { form.submit(); });
         }
       });
     });
   }
 
+  /* ─── Table Row Hover Highlight ─── */
+
+  function initTableRowHighlight() {
+    var rows = document.querySelectorAll(".atum-mailer-table tbody tr");
+    rows.forEach(function (row) {
+      var checkbox = row.querySelector(".atum-log-select");
+      if (!checkbox) return;
+      checkbox.addEventListener("change", function () {
+        row.classList.toggle("is-selected", checkbox.checked);
+      });
+    });
+  }
+
+  /* ─── Init ─── */
+
   document.addEventListener("DOMContentLoaded", function () {
-    if ("undefined" === typeof atumMailerAdmin) {
-      return;
-    }
+    if ("undefined" === typeof atumMailerAdmin) return;
+    initSettingsNav();
     initFromBuilder();
     initEmailAdder();
     initTabsKeyboardNavigation();
     initTokenReveal();
     initLogsFilterPanel();
     initLogDrawer();
+    initTableRowHighlight();
     var dangerModal = initDangerModal();
     initDangerActions(dangerModal);
     initLogsBulkActions(dangerModal);

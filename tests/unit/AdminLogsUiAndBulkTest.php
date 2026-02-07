@@ -69,7 +69,7 @@ final class AdminLogsUiAndBulkTest extends TestCase {
 		$this->assertStringContainsString( 'atum-logs-bulk-form', $html );
 		$this->assertStringContainsString( 'Retry selected', $html );
 		$this->assertStringContainsString( 'Export selected', $html );
-		$this->assertStringContainsString( 'Purge filtered', $html );
+		$this->assertStringContainsString( 'Delete selected', $html );
 		$this->assertStringContainsString( 'atum-log-select-all', $html );
 		$this->assertStringContainsString( 'check-column--center', $html );
 		$this->assertStringContainsString( 'atum-event-chip', $html );

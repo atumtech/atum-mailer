@@ -33,13 +33,15 @@ final class AdminSettingsUiTest extends TestCase {
 		$html = (string) ob_get_clean();
 
 		$this->assertStringContainsString( 'Core Setup', $html );
+		$this->assertStringContainsString( 'Domain DNS Health', $html );
+		$this->assertStringContainsString( 'atum-dns-health', $html );
 		$this->assertStringContainsString( 'Delivery Behavior', $html );
-		$this->assertStringContainsString( 'Advanced Settings', $html );
 		$this->assertStringContainsString( 'Security & Privacy', $html );
 		$this->assertStringContainsString( 'Queue Tuning', $html );
 			$this->assertStringContainsString( 'Retention & Webhooks', $html );
 			$this->assertStringContainsString( 'atum-settings-layout', $html );
-			$this->assertStringContainsString( 'atum-settings-disclosure', $html );
+			$this->assertStringContainsString( 'atum-settings-sidebar-nav', $html );
+			$this->assertStringContainsString( '#atum-settings-dns', $html );
 			$this->assertStringContainsString( 'atum-field-delivery-mode', $html );
 			$this->assertStringContainsString( 'atum-field-webhook-require-signature', $html );
 			$this->assertStringContainsString( 'atum-field-webhook-replay-window', $html );

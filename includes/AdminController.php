@@ -557,12 +557,15 @@ class Atum_Mailer_Admin_Controller {
 			$this->redirect_with_notice( 'logs', $type, $message, $this->logs_tab_url( $filters ), __( 'View Filtered Logs', 'atum-mailer' ) );
 		}
 
-		if ( 'purge_filtered' === $action ) {
-			$deleted = $this->logs->purge_logs_by_filters( $filters );
+		if ( 'delete_selected' === $action ) {
+			if ( empty( $log_ids ) ) {
+				$this->redirect_with_notice( 'logs', 'error', __( 'Select at least one log entry to delete.', 'atum-mailer' ), $this->logs_tab_url( $filters ), __( 'Back to Logs', 'atum-mailer' ) );
+			}
+			$deleted = $this->logs->delete_logs_by_ids( $log_ids );
 			$this->redirect_with_notice(
 				'logs',
 				'success',
-				sprintf( __( 'Purged %d logs matching current filters.', 'atum-mailer' ), (int) $deleted ),
+				sprintf( __( 'Deleted %d selected log entries.', 'atum-mailer' ), (int) $deleted ),
 				$this->logs_tab_url( $filters ),
 				__( 'View Logs', 'atum-mailer' )
 			);
@@ -864,15 +867,18 @@ class Atum_Mailer_Admin_Controller {
 			$tab = 'dashboard';
 		}
 
+		$tab_icons = array(
+			'dashboard' => '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+			'send-test' => '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+			'logs'      => '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+			'settings'  => '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+		);
+
 		$logo_url = '';
 		$logo     = ATUM_MAILER_DIR . 'assets/images/atum-logo.png';
 		if ( file_exists( $logo ) ) {
 			$logo_url = ATUM_MAILER_URL . 'assets/images/atum-logo.png';
 		}
-		$settings_url = $this->admin_tab_url( 'settings' );
-		$logs_url     = $this->admin_tab_url( 'logs' );
-		$send_test_url = $this->admin_tab_url( 'send-test' );
-		$dashboard_url = $this->admin_tab_url( 'dashboard' );
 		$delivery_mode = ucfirst( (string) ( $options['delivery_mode'] ?? 'immediate' ) );
 		$token_state_label = __( 'Token Missing', 'atum-mailer' );
 		$token_state_class = 'is-bad';
@@ -892,22 +898,15 @@ class Atum_Mailer_Admin_Controller {
 							<img src="<?php echo esc_url( $logo_url ); ?>" alt="<?php esc_attr_e( 'Atum Tech', 'atum-mailer' ); ?>" class="atum-shell-hero__logo" />
 						<?php endif; ?>
 						<div class="atum-shell-hero__copy">
-							<p class="atum-shell-hero__eyebrow"><?php esc_html_e( 'Postmark Delivery Control Plane', 'atum-mailer' ); ?></p>
 							<h1><?php esc_html_e( 'atum.mailer', 'atum-mailer' ); ?></h1>
-							<p><?php esc_html_e( 'A complete command center for routing, queueing, observability, and replaying transactional email.', 'atum-mailer' ); ?></p>
+							<p><?php esc_html_e( 'Transactional email delivery powered by Postmark', 'atum-mailer' ); ?></p>
 						</div>
 					</div>
 					<div class="atum-shell-hero__meta">
 						<div class="atum-shell-hero__status">
 							<span class="atum-pill <?php echo esc_attr( ! empty( $options['enabled'] ) ? 'is-good' : 'is-muted' ); ?>"><?php echo ! empty( $options['enabled'] ) ? esc_html__( 'Delivery Enabled', 'atum-mailer' ) : esc_html__( 'Delivery Disabled', 'atum-mailer' ); ?></span>
-							<span class="atum-pill is-muted"><?php echo esc_html( sprintf( __( 'Mode: %s', 'atum-mailer' ), $delivery_mode ) ); ?></span>
+							<span class="atum-pill is-muted"><?php echo esc_html( ucfirst( $delivery_mode ) ); ?></span>
 							<span class="atum-pill <?php echo esc_attr( $token_state_class ); ?>"><?php echo esc_html( $token_state_label ); ?></span>
-						</div>
-						<div class="atum-shell-hero__actions">
-							<a href="<?php echo esc_url( $dashboard_url ); ?>" class="button button-secondary"><?php esc_html_e( 'Open Dashboard', 'atum-mailer' ); ?></a>
-							<a href="<?php echo esc_url( $send_test_url ); ?>" class="button button-secondary"><?php esc_html_e( 'Send Test', 'atum-mailer' ); ?></a>
-							<a href="<?php echo esc_url( $logs_url ); ?>" class="button button-secondary"><?php esc_html_e( 'Open Logs', 'atum-mailer' ); ?></a>
-							<a href="<?php echo esc_url( $settings_url ); ?>" class="button button-primary"><?php esc_html_e( 'Configure Settings', 'atum-mailer' ); ?></a>
 						</div>
 					</div>
 				</header>
@@ -923,33 +922,33 @@ class Atum_Mailer_Admin_Controller {
 							aria-selected="<?php echo esc_attr( $is_active ? 'true' : 'false' ); ?>"
 							tabindex="<?php echo esc_attr( $is_active ? '0' : '-1' ); ?>"
 							<?php echo $is_active ? 'aria-current="page"' : ''; ?>
-						><?php echo esc_html( $label ); ?></a>
+						><?php if ( isset( $tab_icons[ $slug ] ) ) { echo '<span class="atum-mailer-tab__icon" aria-hidden="true">' . $tab_icons[ $slug ] . '</span>'; } ?><?php echo esc_html( $label ); ?></a>
 					<?php endforeach; ?>
 				</nav>
 
 				<?php $this->render_inline_notice(); ?>
 
-				<div class="atum-mailer-panel atum-mailer-panel--<?php echo esc_attr( $tab ); ?>">
-					<div>
-						<?php
-						switch ( $tab ) {
-							case 'send-test':
-								$this->render_send_test_tab();
-								break;
-							case 'logs':
-								$this->render_logs_tab();
-								break;
-							case 'settings':
-								$this->render_settings_tab();
-								break;
-							case 'dashboard':
-							default:
-								$this->render_dashboard_tab( $options );
-								break;
-						}
-						?>
-					</div>
-				</div>
+				<?php
+				switch ( $tab ) {
+					case 'send-test':
+						?><div class="atum-mailer-panel atum-mailer-panel--send-test"><div><?php
+						$this->render_send_test_tab();
+						?></div></div><?php
+						break;
+					case 'logs':
+						$this->render_logs_tab();
+						break;
+					case 'settings':
+						$this->render_settings_tab();
+						break;
+					case 'dashboard':
+					default:
+						?><div class="atum-mailer-panel atum-mailer-panel--dashboard"><div><?php
+						$this->render_dashboard_tab( $options );
+						?></div></div><?php
+						break;
+				}
+				?>
 			</div>
 		</div>
 		<?php
@@ -1045,77 +1044,80 @@ class Atum_Mailer_Admin_Controller {
 		}
 		?>
 		<div class="atum-dashboard">
-			<section class="atum-card atum-card--full atum-dashboard-readiness">
-				<div class="atum-dashboard-readiness__head">
-					<div>
+			<details class="atum-card atum-card--full atum-dashboard-readiness" <?php echo $required_percent < 100 ? 'open' : ''; ?>>
+				<summary class="atum-dashboard-readiness__summary">
+					<div class="atum-dashboard-readiness__summary-left">
 						<h2><?php esc_html_e( 'Setup Readiness', 'atum-mailer' ); ?></h2>
-						<p><?php echo esc_html( $readiness['summary'] ); ?></p>
+						<div class="atum-dashboard-readiness__inline-progress">
+							<div class="atum-progress-track atum-progress-track--inline" role="presentation">
+								<span class="atum-progress-track__fill" style="width: <?php echo esc_attr( $required_percent ); ?>%;"></span>
+							</div>
+							<span class="atum-dashboard-readiness__fraction"><?php echo esc_html( (int) $readiness['required_done'] . '/' . (int) $readiness['required_total'] ); ?></span>
+						</div>
 					</div>
-					<span class="atum-readiness-pill <?php echo esc_attr( $readiness['badge_class'] ); ?>"><?php echo esc_html( $readiness['badge_label'] ); ?></span>
-				</div>
-				<div class="atum-dashboard-readiness__progress">
-					<div class="atum-progress-track" role="presentation">
-						<span class="atum-progress-track__fill" style="width: <?php echo esc_attr( $required_percent ); ?>%;"></span>
-					</div>
-					<div class="atum-dashboard-readiness__meta">
-						<p>
-							<?php
-							echo esc_html(
-								sprintf(
-									/* translators: 1: required steps complete, 2: required total, 3: optional complete, 4: optional total */
-									__( 'Required steps: %1$d/%2$d. Optional steps: %3$d/%4$d.', 'atum-mailer' ),
-									(int) $readiness['required_done'],
-									(int) $readiness['required_total'],
-									(int) $readiness['optional_done'],
-									(int) $readiness['optional_total']
-								)
-							);
-							?>
-						</p>
+					<div class="atum-dashboard-readiness__summary-right">
+						<span class="atum-readiness-pill <?php echo esc_attr( $readiness['badge_class'] ); ?>"><?php echo esc_html( $readiness['badge_label'] ); ?></span>
 						<?php if ( ! empty( $readiness['primary_action_url'] ) && ! empty( $readiness['primary_action_label'] ) ) : ?>
-							<a class="button button-primary" href="<?php echo esc_url( $readiness['primary_action_url'] ); ?>"><?php echo esc_html( $readiness['primary_action_label'] ); ?></a>
+							<a class="button button-primary button-small" href="<?php echo esc_url( $readiness['primary_action_url'] ); ?>" onclick="event.stopPropagation();"><?php echo esc_html( $readiness['primary_action_label'] ); ?></a>
 						<?php endif; ?>
 					</div>
-				</div>
-				<ol class="atum-setup-rail">
-					<?php foreach ( $readiness['steps'] as $step ) : ?>
-						<li class="atum-setup-rail__item <?php echo esc_attr( ! empty( $step['done'] ) ? 'is-complete' : 'is-pending' ); ?>">
-							<div class="atum-setup-rail__content">
-								<div class="atum-setup-rail__title">
-									<strong><?php echo esc_html( $step['title'] ); ?></strong>
-									<span class="atum-setup-rail__scope"><?php echo ! empty( $step['required'] ) ? esc_html__( 'Required', 'atum-mailer' ) : esc_html__( 'Optional', 'atum-mailer' ); ?></span>
+				</summary>
+				<div class="atum-dashboard-readiness__body">
+					<ol class="atum-setup-rail">
+						<?php foreach ( $readiness['steps'] as $step ) : ?>
+							<li class="atum-setup-rail__item <?php echo esc_attr( ! empty( $step['done'] ) ? 'is-complete' : 'is-pending' ); ?>">
+								<div class="atum-setup-rail__content">
+									<div class="atum-setup-rail__title">
+										<strong><?php echo esc_html( $step['title'] ); ?></strong>
+										<span class="atum-setup-rail__scope"><?php echo ! empty( $step['required'] ) ? esc_html__( 'Required', 'atum-mailer' ) : esc_html__( 'Optional', 'atum-mailer' ); ?></span>
+									</div>
+									<p><?php echo esc_html( $step['description'] ); ?></p>
 								</div>
-								<p><?php echo esc_html( $step['description'] ); ?></p>
-							</div>
-							<div class="atum-setup-rail__actions">
-								<span class="atum-setup-rail__state <?php echo esc_attr( ! empty( $step['done'] ) ? 'is-good' : 'is-warn' ); ?>"><?php echo ! empty( $step['done'] ) ? esc_html__( 'Done', 'atum-mailer' ) : esc_html__( 'Pending', 'atum-mailer' ); ?></span>
-								<?php if ( ! empty( $step['url'] ) ) : ?>
-									<a class="button button-secondary" href="<?php echo esc_url( $step['url'] ); ?>"><?php echo esc_html( $step['action_label'] ); ?></a>
-								<?php endif; ?>
-							</div>
-						</li>
-					<?php endforeach; ?>
-				</ol>
-			</section>
+								<div class="atum-setup-rail__actions">
+									<span class="atum-setup-rail__state <?php echo esc_attr( ! empty( $step['done'] ) ? 'is-good' : 'is-warn' ); ?>"><?php echo ! empty( $step['done'] ) ? esc_html__( 'Done', 'atum-mailer' ) : esc_html__( 'Pending', 'atum-mailer' ); ?></span>
+									<?php if ( ! empty( $step['url'] ) ) : ?>
+										<a class="button button-small button-secondary" href="<?php echo esc_url( $step['url'] ); ?>"><?php echo esc_html( $step['action_label'] ); ?></a>
+									<?php endif; ?>
+								</div>
+							</li>
+						<?php endforeach; ?>
+					</ol>
+				</div>
+			</details>
 
 			<section class="atum-dashboard-kpis">
 				<div class="atum-kpi-card">
+					<div class="atum-kpi-card__icon" aria-hidden="true">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+					</div>
 					<p><?php esc_html_e( 'Total Logged Messages', 'atum-mailer' ); ?></p>
 					<strong><?php echo esc_html( number_format_i18n( $stats['total'] ) ); ?></strong>
 				</div>
 				<div class="atum-kpi-card">
+					<div class="atum-kpi-card__icon atum-kpi-card__icon--success" aria-hidden="true">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+					</div>
 					<p><?php esc_html_e( 'Sent', 'atum-mailer' ); ?></p>
 					<strong><?php echo esc_html( number_format_i18n( $stats['sent'] ) ); ?></strong>
 				</div>
 				<div class="atum-kpi-card">
+					<div class="atum-kpi-card__icon atum-kpi-card__icon--danger" aria-hidden="true">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+					</div>
 					<p><?php esc_html_e( 'Failed', 'atum-mailer' ); ?></p>
 					<strong><?php echo esc_html( number_format_i18n( $stats['failed'] ) ); ?></strong>
 				</div>
 				<div class="atum-kpi-card">
+					<div class="atum-kpi-card__icon atum-kpi-card__icon--warning" aria-hidden="true">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 6 4-4 4 4"/><path d="M16 18a4 4 0 0 0-8 0"/></svg>
+					</div>
 					<p><?php esc_html_e( 'Queue Backlog', 'atum-mailer' ); ?></p>
 					<strong><?php echo esc_html( number_format_i18n( $stats['queue_backlog'] ) ); ?></strong>
 				</div>
 				<div class="atum-kpi-card">
+					<div class="atum-kpi-card__icon atum-kpi-card__icon--muted" aria-hidden="true">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+					</div>
 					<p><?php esc_html_e( 'Dead Letters', 'atum-mailer' ); ?></p>
 					<strong><?php echo esc_html( number_format_i18n( (int) ( $stats['dead_letter'] ?? 0 ) ) ); ?></strong>
 				</div>
@@ -1304,8 +1306,8 @@ class Atum_Mailer_Admin_Controller {
 				'description' => (string) $dns_check['description'],
 				'done'        => ! empty( $dns_check['done'] ),
 				'required'    => false,
-				'url'         => $this->admin_tab_url( 'settings', 'atum-field-from-email' ),
-				'action_label'=> __( 'Open Sender Settings', 'atum-mailer' ),
+				'url'         => $this->admin_tab_url( 'settings', 'atum-settings-dns' ),
+				'action_label'=> __( 'View DNS Health', 'atum-mailer' ),
 			),
 		);
 
@@ -1367,81 +1369,94 @@ class Atum_Mailer_Admin_Controller {
 	 *
 	 * @return array{done: bool, description: string}
 	 */
-	private function build_postmark_dns_check() {
-		$domain = $this->resolve_site_domain_for_dns_check();
-		if ( '' === $domain ) {
+	
+		private function build_postmark_dns_check() {
+			$domain = $this->resolve_site_domain_for_dns_check();
+			if ( '' === $domain ) {
+				return array(
+					'done'             => false,
+					'description'      => __( 'Unable to determine the current site domain for DNS checks.', 'atum-mailer' ),
+					'domain'           => '',
+					'spf_pass'         => false,
+					'dkim_pass'        => false,
+					'dmarc_pass'       => false,
+					'return_path_pass' => false,
+				);
+			}
+
+			$spf_pass        = false;
+			$dkim_pass       = false;
+			$dmarc_pass      = false;
+			$return_path_pass = false;
+
+			$root_txt_records = $this->lookup_dns_records( $domain, 'TXT' );
+			foreach ( $root_txt_records as $record ) {
+				$value = $this->normalize_dns_txt_record( $record );
+				if ( '' === $value ) {
+					continue;
+				}
+
+				if ( 0 === strpos( $value, 'v=spf1' ) && false !== strpos( $value, 'include:spf.mtasv.net' ) ) {
+					$spf_pass = true;
+					break;
+				}
+			}
+
+			$dkim_records = $this->lookup_dns_records( 'pm._domainkey.' . $domain, 'TXT' );
+			foreach ( $dkim_records as $record ) {
+				$value = $this->normalize_dns_txt_record( $record );
+				if ( '' === $value ) {
+					continue;
+				}
+
+				if ( false !== strpos( $value, 'v=dkim1' ) && false !== strpos( $value, 'p=' ) ) {
+					$dkim_pass = true;
+					break;
+				}
+			}
+
+			$dmarc_records = $this->lookup_dns_records( '_dmarc.' . $domain, 'TXT' );
+			foreach ( $dmarc_records as $record ) {
+				$value = $this->normalize_dns_txt_record( $record );
+				if ( 0 === strpos( $value, 'v=dmarc1' ) ) {
+					$dmarc_pass = true;
+					break;
+				}
+			}
+
+			$return_path_records = $this->lookup_dns_records( 'pm-bounces.' . $domain, 'CNAME' );
+			foreach ( $return_path_records as $record ) {
+				$target = strtolower( trim( (string) ( $record['target'] ?? '' ), " \t\n\r\0\x0B." ) );
+				if ( '' !== $target && false !== strpos( $target, 'pm.mtasv.net' ) ) {
+					$return_path_pass = true;
+					break;
+				}
+			}
+
+			$status_found   = __( 'Found', 'atum-mailer' );
+			$status_missing = __( 'Missing', 'atum-mailer' );
+			$description    = sprintf(
+				/* translators: 1: domain, 2: SPF status, 3: DKIM status, 4: DMARC status, 5: return-path status */
+				__( 'Domain %1$s checks: SPF: %2$s, DKIM (pm._domainkey): %3$s, DMARC: %4$s, Return-Path (pm-bounces): %5$s.', 'atum-mailer' ),
+				$domain,
+				$spf_pass ? $status_found : $status_missing,
+				$dkim_pass ? $status_found : $status_missing,
+				$dmarc_pass ? $status_found : $status_missing,
+				$return_path_pass ? $status_found : $status_missing
+			);
+
 			return array(
-				'done'        => false,
-				'description' => __( 'Unable to determine the current site domain for DNS checks.', 'atum-mailer' ),
+				'done'             => $spf_pass && $dkim_pass,
+				'description'      => $description,
+				'domain'           => $domain,
+				'spf_pass'         => $spf_pass,
+				'dkim_pass'        => $dkim_pass,
+				'dmarc_pass'       => $dmarc_pass,
+				'return_path_pass' => $return_path_pass,
 			);
 		}
 
-		$spf_pass        = false;
-		$dkim_pass       = false;
-		$dmarc_pass      = false;
-		$return_path_pass = false;
 
-		$root_txt_records = $this->lookup_dns_records( $domain, 'TXT' );
-		foreach ( $root_txt_records as $record ) {
-			$value = $this->normalize_dns_txt_record( $record );
-			if ( '' === $value ) {
-				continue;
-			}
-
-			if ( 0 === strpos( $value, 'v=spf1' ) && false !== strpos( $value, 'include:spf.mtasv.net' ) ) {
-				$spf_pass = true;
-				break;
-			}
-		}
-
-		$dkim_records = $this->lookup_dns_records( 'pm._domainkey.' . $domain, 'TXT' );
-		foreach ( $dkim_records as $record ) {
-			$value = $this->normalize_dns_txt_record( $record );
-			if ( '' === $value ) {
-				continue;
-			}
-
-			if ( false !== strpos( $value, 'v=dkim1' ) && false !== strpos( $value, 'p=' ) ) {
-				$dkim_pass = true;
-				break;
-			}
-		}
-
-		$dmarc_records = $this->lookup_dns_records( '_dmarc.' . $domain, 'TXT' );
-		foreach ( $dmarc_records as $record ) {
-			$value = $this->normalize_dns_txt_record( $record );
-			if ( 0 === strpos( $value, 'v=dmarc1' ) ) {
-				$dmarc_pass = true;
-				break;
-			}
-		}
-
-		$return_path_records = $this->lookup_dns_records( 'pm-bounces.' . $domain, 'CNAME' );
-		foreach ( $return_path_records as $record ) {
-			$target = strtolower( trim( (string) ( $record['target'] ?? '' ), " \t\n\r\0\x0B." ) );
-			if ( '' !== $target && false !== strpos( $target, 'pm.mtasv.net' ) ) {
-				$return_path_pass = true;
-				break;
-			}
-		}
-
-		$status_found   = __( 'Found', 'atum-mailer' );
-		$status_missing = __( 'Missing', 'atum-mailer' );
-		$description    = sprintf(
-			/* translators: 1: domain, 2: SPF status, 3: DKIM status, 4: DMARC status, 5: return-path status */
-			__( 'Domain %1$s checks: SPF: %2$s, DKIM (pm._domainkey): %3$s, DMARC: %4$s, Return-Path (pm-bounces): %5$s.', 'atum-mailer' ),
-			$domain,
-			$spf_pass ? $status_found : $status_missing,
-			$dkim_pass ? $status_found : $status_missing,
-			$dmarc_pass ? $status_found : $status_missing,
-			$return_path_pass ? $status_found : $status_missing
-		);
-
-		return array(
-			'done'        => $spf_pass && $dkim_pass,
-			'description' => $description,
-		);
-	}
 
 	/**
 	 * Resolve the current site domain for DNS checks.
@@ -1818,17 +1833,15 @@ class Atum_Mailer_Admin_Controller {
 				<?php $this->render_log_filter_hidden_inputs( $filters ); ?>
 				<input type="hidden" name="log_ids_csv" value="" class="atum-log-ids-csv" />
 				<div class="atum-logs-bulk-controls">
-					<label for="atum-logs-bulk-action" class="atum-logs-bulk-label"><?php esc_html_e( 'Bulk actions', 'atum-mailer' ); ?></label>
-					<select id="atum-logs-bulk-action" name="bulk_action" class="atum-logs-bulk-action">
+					<select id="atum-logs-bulk-action" name="bulk_action" class="atum-logs-bulk-action" aria-label="<?php esc_attr_e( 'Bulk actions', 'atum-mailer' ); ?>">
 						<option value=""><?php esc_html_e( 'Bulk actions', 'atum-mailer' ); ?></option>
 						<option value="retry_selected"><?php esc_html_e( 'Retry selected', 'atum-mailer' ); ?></option>
 						<option value="export_selected"><?php esc_html_e( 'Export selected', 'atum-mailer' ); ?></option>
-						<option value="purge_filtered"><?php esc_html_e( 'Purge filtered', 'atum-mailer' ); ?></option>
+						<option value="delete_selected"><?php esc_html_e( 'Delete selected', 'atum-mailer' ); ?></option>
 					</select>
-					<button class="button button-primary" type="submit"><?php esc_html_e( 'Apply Action', 'atum-mailer' ); ?></button>
+					<button class="button button-primary atum-logs-bulk-apply" type="submit"><?php esc_html_e( 'Apply', 'atum-mailer' ); ?></button>
 					<span class="atum-pill is-muted atum-logs-selected-count" data-atum-selected-count="1"><?php esc_html_e( '0 selected', 'atum-mailer' ); ?></span>
 				</div>
-				<p class="atum-logs-bulk-help"><?php esc_html_e( 'Choose an action and apply it to selected rows.', 'atum-mailer' ); ?></p>
 			</form>
 
 				<div class="atum-table-wrap">
@@ -1933,59 +1946,68 @@ class Atum_Mailer_Admin_Controller {
 						<h3 id="atum-log-drawer-title"><?php esc_html_e( 'Log Details', 'atum-mailer' ); ?></h3>
 						<p class="atum-log-drawer__subtitle" data-atum-field="subject"></p>
 					</div>
-					<button type="button" class="button button-secondary" data-atum-close="1" data-atum-initial-focus="1"><?php esc_html_e( 'Close', 'atum-mailer' ); ?></button>
+					<button type="button" class="button button-secondary button-small" data-atum-close="1" data-atum-initial-focus="1"><?php esc_html_e( 'Close', 'atum-mailer' ); ?></button>
 				</header>
-				<div class="atum-log-drawer__meta">
-					<div><strong><?php esc_html_e( 'Status', 'atum-mailer' ); ?>:</strong> <span data-atum-field="status"></span></div>
-					<div><strong><?php esc_html_e( 'Date', 'atum-mailer' ); ?>:</strong> <span data-atum-field="created_at"></span></div>
-					<div><strong><?php esc_html_e( 'To', 'atum-mailer' ); ?>:</strong> <span data-atum-field="to"></span></div>
-					<div><strong><?php esc_html_e( 'HTTP', 'atum-mailer' ); ?>:</strong> <span data-atum-field="http_status"></span></div>
-					<div><strong><?php esc_html_e( 'Provider ID', 'atum-mailer' ); ?>:</strong> <span data-atum-field="provider_message_id"></span></div>
-					<div><strong><?php esc_html_e( 'Mode', 'atum-mailer' ); ?>:</strong> <span data-atum-field="delivery_mode"></span></div>
-					<div><strong><?php esc_html_e( 'Attempts', 'atum-mailer' ); ?>:</strong> <span data-atum-field="attempt_count"></span></div>
-					<div><strong><?php esc_html_e( 'Next Attempt', 'atum-mailer' ); ?>:</strong> <span data-atum-field="next_attempt_at"></span></div>
-				</div>
 				<div class="atum-log-drawer__scroll">
 					<div class="atum-log-drawer__body">
-							<section class="atum-log-resend-panel">
-								<h4><?php esc_html_e( 'Replay / Resend', 'atum-mailer' ); ?></h4>
-								<p><?php esc_html_e( 'Safeguard edits: you can override recipient(s), subject, and delivery mode before resending this payload.', 'atum-mailer' ); ?></p>
+						<div class="atum-log-drawer__meta-grid">
+							<div class="atum-log-drawer__meta-item"><span class="atum-log-drawer__meta-label"><?php esc_html_e( 'Status', 'atum-mailer' ); ?></span><span class="atum-log-drawer__meta-value" data-atum-field="status"></span></div>
+							<div class="atum-log-drawer__meta-item"><span class="atum-log-drawer__meta-label"><?php esc_html_e( 'Date', 'atum-mailer' ); ?></span><span class="atum-log-drawer__meta-value" data-atum-field="created_at"></span></div>
+							<div class="atum-log-drawer__meta-item"><span class="atum-log-drawer__meta-label"><?php esc_html_e( 'To', 'atum-mailer' ); ?></span><span class="atum-log-drawer__meta-value" data-atum-field="to"></span></div>
+							<div class="atum-log-drawer__meta-item"><span class="atum-log-drawer__meta-label"><?php esc_html_e( 'HTTP', 'atum-mailer' ); ?></span><span class="atum-log-drawer__meta-value" data-atum-field="http_status"></span></div>
+							<div class="atum-log-drawer__meta-item"><span class="atum-log-drawer__meta-label"><?php esc_html_e( 'Provider ID', 'atum-mailer' ); ?></span><span class="atum-log-drawer__meta-value atum-log-drawer__meta-value--mono" data-atum-field="provider_message_id"></span></div>
+							<div class="atum-log-drawer__meta-item"><span class="atum-log-drawer__meta-label"><?php esc_html_e( 'Mode', 'atum-mailer' ); ?></span><span class="atum-log-drawer__meta-value" data-atum-field="delivery_mode"></span></div>
+							<div class="atum-log-drawer__meta-item"><span class="atum-log-drawer__meta-label"><?php esc_html_e( 'Attempts', 'atum-mailer' ); ?></span><span class="atum-log-drawer__meta-value" data-atum-field="attempt_count"></span></div>
+							<div class="atum-log-drawer__meta-item"><span class="atum-log-drawer__meta-label"><?php esc_html_e( 'Next Attempt', 'atum-mailer' ); ?></span><span class="atum-log-drawer__meta-value" data-atum-field="next_attempt_at"></span></div>
+						</div>
+
+						<details class="atum-log-drawer__section" open>
+							<summary class="atum-log-drawer__section-title"><?php esc_html_e( 'Delivery Timeline', 'atum-mailer' ); ?></summary>
+							<ol class="atum-log-timeline" data-atum-field="timeline"></ol>
+						</details>
+
+						<details class="atum-log-drawer__section">
+							<summary class="atum-log-drawer__section-title"><?php esc_html_e( 'Diagnostics', 'atum-mailer' ); ?></summary>
+							<div class="atum-log-diagnostics">
+								<div><h4><?php esc_html_e( 'Error', 'atum-mailer' ); ?></h4><pre data-atum-field="error_message"></pre></div>
+								<div><h4><?php esc_html_e( 'Last Error Code', 'atum-mailer' ); ?></h4><pre data-atum-field="last_error_code"></pre></div>
+								<div><h4><?php esc_html_e( 'Webhook Event', 'atum-mailer' ); ?></h4><pre data-atum-field="webhook_event_type"></pre></div>
+							</div>
+						</details>
+
+						<details class="atum-log-drawer__section">
+							<summary class="atum-log-drawer__section-title"><?php esc_html_e( 'Replay / Resend', 'atum-mailer' ); ?></summary>
+							<div class="atum-log-resend-panel">
+								<p><?php esc_html_e( 'Override recipient(s), subject, or delivery mode before resending.', 'atum-mailer' ); ?></p>
 								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="atum-log-resend-form">
 									<?php wp_nonce_field( 'atum_mailer_resend_log' ); ?>
 									<input type="hidden" name="action" value="atum_mailer_resend_log" />
 									<input type="hidden" name="log_id" value="" data-atum-resend-log-id="1" />
-									<label><?php esc_html_e( 'Recipient override (comma separated)', 'atum-mailer' ); ?></label>
-									<input type="text" name="resend_to" value="" data-atum-resend-to="1" />
+									<label><?php esc_html_e( 'Recipient override', 'atum-mailer' ); ?></label>
+									<input type="text" name="resend_to" value="" data-atum-resend-to="1" placeholder="<?php esc_attr_e( 'Comma separated emails', 'atum-mailer' ); ?>" />
 									<label><?php esc_html_e( 'Subject override', 'atum-mailer' ); ?></label>
 									<input type="text" name="resend_subject" value="" data-atum-resend-subject="1" />
-									<label><?php esc_html_e( 'Delivery mode override', 'atum-mailer' ); ?></label>
+									<label><?php esc_html_e( 'Delivery mode', 'atum-mailer' ); ?></label>
 									<select name="resend_mode" data-atum-resend-mode="1">
-										<option value=""><?php esc_html_e( 'Use current default mode', 'atum-mailer' ); ?></option>
+										<option value=""><?php esc_html_e( 'Use current default', 'atum-mailer' ); ?></option>
 										<option value="immediate"><?php esc_html_e( 'Immediate', 'atum-mailer' ); ?></option>
 										<option value="queue"><?php esc_html_e( 'Queue', 'atum-mailer' ); ?></option>
 									</select>
-									<button type="submit" class="button button-secondary"><?php esc_html_e( 'Resend With Overrides', 'atum-mailer' ); ?></button>
+									<button type="submit" class="button button-primary button-small"><?php esc_html_e( 'Resend', 'atum-mailer' ); ?></button>
 								</form>
-							</section>
-							<section class="atum-log-timeline-section">
-								<h4><?php esc_html_e( 'Delivery Timeline', 'atum-mailer' ); ?></h4>
-								<ol class="atum-log-timeline" data-atum-field="timeline"></ol>
-							</section>
-							<section class="atum-log-diagnostics">
-								<div><h4><?php esc_html_e( 'Error', 'atum-mailer' ); ?></h4><pre data-atum-field="error_message"></pre></div>
-								<div><h4><?php esc_html_e( 'Last Error Code', 'atum-mailer' ); ?></h4><pre data-atum-field="last_error_code"></pre></div>
-								<div><h4><?php esc_html_e( 'Webhook Event', 'atum-mailer' ); ?></h4><pre data-atum-field="webhook_event_type"></pre></div>
-							</section>
-							<details class="atum-log-raw-disclosure">
-								<summary><?php esc_html_e( 'Raw Payload & Response', 'atum-mailer' ); ?></summary>
-								<div class="atum-log-raw-disclosure__body">
-									<section><h4><?php esc_html_e( 'Message', 'atum-mailer' ); ?></h4><pre data-atum-field="message"></pre></section>
-									<section><h4><?php esc_html_e( 'Headers', 'atum-mailer' ); ?></h4><pre data-atum-field="headers"></pre></section>
-									<section><h4><?php esc_html_e( 'Attachments', 'atum-mailer' ); ?></h4><pre data-atum-field="attachments"></pre></section>
-									<section><h4><?php esc_html_e( 'Request Payload', 'atum-mailer' ); ?></h4><pre data-atum-field="request_payload"></pre></section>
-									<section><h4><?php esc_html_e( 'Response Body', 'atum-mailer' ); ?></h4><pre data-atum-field="response_body"></pre></section>
-								</div>
-							</details>
+							</div>
+						</details>
+
+						<details class="atum-log-drawer__section">
+							<summary class="atum-log-drawer__section-title"><?php esc_html_e( 'Raw Payload & Response', 'atum-mailer' ); ?></summary>
+							<div class="atum-log-raw-disclosure__body">
+								<section><h4><?php esc_html_e( 'Message', 'atum-mailer' ); ?></h4><pre data-atum-field="message"></pre></section>
+								<section><h4><?php esc_html_e( 'Headers', 'atum-mailer' ); ?></h4><pre data-atum-field="headers"></pre></section>
+								<section><h4><?php esc_html_e( 'Attachments', 'atum-mailer' ); ?></h4><pre data-atum-field="attachments"></pre></section>
+								<section><h4><?php esc_html_e( 'Request Payload', 'atum-mailer' ); ?></h4><pre data-atum-field="request_payload"></pre></section>
+								<section><h4><?php esc_html_e( 'Response Body', 'atum-mailer' ); ?></h4><pre data-atum-field="response_body"></pre></section>
+							</div>
+						</details>
 					</div>
 				</div>
 				<footer class="atum-log-drawer__footer">
@@ -2129,61 +2151,86 @@ class Atum_Mailer_Admin_Controller {
 				<?php settings_fields( 'atum_mailer_settings' ); ?>
 				<header class="atum-settings-shell__header">
 					<div>
-						<h2><?php esc_html_e( 'Settings Command Center', 'atum-mailer' ); ?></h2>
-						<p class="atum-settings-intro"><?php esc_html_e( 'Design your mail pipeline: credentials, sender identity, queue policy, observability, and webhook trust model.', 'atum-mailer' ); ?></p>
+						<h2><?php esc_html_e( 'Settings', 'atum-mailer' ); ?></h2>
+						<p class="atum-settings-intro"><?php esc_html_e( 'Credentials, sender identity, queue policy, observability, and webhooks.', 'atum-mailer' ); ?></p>
 					</div>
 					<div class="atum-settings-shell__badges">
 						<span class="atum-pill <?php echo esc_attr( ! empty( $options['enabled'] ) ? 'is-good' : 'is-muted' ); ?>"><?php echo ! empty( $options['enabled'] ) ? esc_html__( 'Delivery Enabled', 'atum-mailer' ) : esc_html__( 'Delivery Disabled', 'atum-mailer' ); ?></span>
-						<span class="atum-pill is-muted"><?php echo esc_html( sprintf( __( 'Mode: %s', 'atum-mailer' ), ucfirst( (string) ( $options['delivery_mode'] ?? 'immediate' ) ) ) ); ?></span>
 						<span class="atum-pill <?php echo esc_attr( ! empty( $options['token_verified'] ) ? 'is-good' : 'is-warn' ); ?>"><?php echo ! empty( $options['token_verified'] ) ? esc_html__( 'Token Verified', 'atum-mailer' ) : esc_html__( 'Token Unverified', 'atum-mailer' ); ?></span>
 					</div>
 				</header>
-				<nav class="atum-settings-shell__nav" aria-label="<?php esc_attr_e( 'Settings sections', 'atum-mailer' ); ?>">
-					<a href="#atum-settings-core"><?php esc_html_e( 'Core Setup', 'atum-mailer' ); ?></a>
-					<a href="#atum-settings-delivery"><?php esc_html_e( 'Delivery Behavior', 'atum-mailer' ); ?></a>
-					<a href="#atum-settings-advanced"><?php esc_html_e( 'Advanced Settings', 'atum-mailer' ); ?></a>
-				</nav>
 				<div class="atum-settings-shell__content">
-					<section id="atum-settings-core" class="atum-settings-zone">
-						<?php
-						$this->render_settings_card(
-							__( 'Core Setup', 'atum-mailer' ),
-							__( 'Complete these first for reliable transactional delivery.', 'atum-mailer' ),
-							$core_fields
-						);
-						?>
-					</section>
-					<section id="atum-settings-delivery" class="atum-settings-zone">
-						<?php
-						$this->render_settings_card(
-							__( 'Delivery Behavior', 'atum-mailer' ),
-							__( 'Choose real-time or queued delivery and tracking behavior.', 'atum-mailer' ),
-							$delivery_fields
-						);
-						?>
-					</section>
-					<details class="atum-settings-disclosure" id="atum-settings-advanced">
-						<summary><?php esc_html_e( 'Advanced Settings', 'atum-mailer' ); ?></summary>
-						<div class="atum-settings-grid atum-settings-grid--advanced">
-							<?php
-							$this->render_settings_card(
-								__( 'Security & Privacy', 'atum-mailer' ),
-								__( 'Control sensitive value visibility and data stored in logs.', 'atum-mailer' ),
-								$advanced_security_fields
-							);
-							$this->render_settings_card(
-								__( 'Queue Tuning', 'atum-mailer' ),
-								__( 'Adjust retry policy for transient provider outages.', 'atum-mailer' ),
-								$advanced_queue_fields
-							);
-							$this->render_settings_card(
-								__( 'Retention & Webhooks', 'atum-mailer' ),
-								__( 'Set data retention and webhook integration details.', 'atum-mailer' ),
-								$advanced_retention_fields
-							);
-							?>
+					<div class="atum-settings-two-col">
+						<div class="atum-settings-two-col__main">
+							<section id="atum-settings-core" class="atum-settings-zone">
+								<?php
+								$this->render_settings_card(
+									__( 'Core Setup', 'atum-mailer' ),
+									__( 'Complete these first for reliable transactional delivery.', 'atum-mailer' ),
+									$core_fields,
+									'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>'
+								);
+								?>
+							</section>
+							<section id="atum-settings-dns" class="atum-settings-zone">
+								<?php $this->render_dns_health_section(); ?>
+							</section>
+							<section id="atum-settings-delivery" class="atum-settings-zone">
+								<?php
+								$this->render_settings_card(
+									__( 'Delivery Behavior', 'atum-mailer' ),
+									__( 'Choose real-time or queued delivery and tracking behavior.', 'atum-mailer' ),
+									$delivery_fields,
+									'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
+								);
+								?>
+							</section>
 						</div>
-					</details>
+						<div class="atum-settings-two-col__side">
+							<nav class="atum-settings-sidebar-nav" aria-label="<?php esc_attr_e( 'Settings sections', 'atum-mailer' ); ?>">
+								<strong><?php esc_html_e( 'Jump to', 'atum-mailer' ); ?></strong>
+								<a href="#atum-settings-core"><?php esc_html_e( 'Core Setup', 'atum-mailer' ); ?></a>
+								<a href="#atum-settings-dns"><?php esc_html_e( 'Domain DNS', 'atum-mailer' ); ?></a>
+								<a href="#atum-settings-delivery"><?php esc_html_e( 'Delivery Behavior', 'atum-mailer' ); ?></a>
+								<a href="#atum-settings-security"><?php esc_html_e( 'Security & Privacy', 'atum-mailer' ); ?></a>
+								<a href="#atum-settings-queue"><?php esc_html_e( 'Queue Tuning', 'atum-mailer' ); ?></a>
+								<a href="#atum-settings-retention"><?php esc_html_e( 'Retention & Webhooks', 'atum-mailer' ); ?></a>
+							</nav>
+							<div class="atum-settings-sidebar-save">
+								<?php submit_button( __( 'Save Settings', 'atum-mailer' ), 'primary', 'submit', false ); ?>
+							</div>
+						</div>
+					</div>
+					<section id="atum-settings-security" class="atum-settings-zone">
+						<?php
+						$this->render_settings_card(
+							__( 'Security & Privacy', 'atum-mailer' ),
+							__( 'Control sensitive value visibility and data stored in logs.', 'atum-mailer' ),
+							$advanced_security_fields,
+							'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
+						);
+						?>
+					</section>
+					<section id="atum-settings-queue" class="atum-settings-zone">
+						<?php
+						$this->render_settings_card(
+							__( 'Queue Tuning', 'atum-mailer' ),
+							__( 'Adjust retry policy for transient provider outages.', 'atum-mailer' ),
+							$advanced_queue_fields,
+							'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>'
+						);
+						?>
+					</section>
+					<section id="atum-settings-retention" class="atum-settings-zone">
+						<?php
+						$this->render_settings_card(
+							__( 'Retention & Webhooks', 'atum-mailer' ),
+							__( 'Set data retention and webhook integration details.', 'atum-mailer' ),
+							$advanced_retention_fields,
+							'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
+						);
+						?>
+					</section>
 				</div>
 				<div class="atum-settings-shell__footer">
 					<?php submit_button( __( 'Save Settings', 'atum-mailer' ), 'primary', 'submit', false ); ?>
@@ -2201,13 +2248,18 @@ class Atum_Mailer_Admin_Controller {
 	 * @param array<int, array<string, string>> $fields Field rows.
 	 * @return void
 	 */
-	private function render_settings_card( $title, $description, $fields ) {
+	private function render_settings_card( $title, $description, $fields, $icon_svg = '' ) {
 		$heading_id = 'atum-settings-card-' . substr( md5( $title ), 0, 8 );
 		?>
 		<section class="atum-settings-card" aria-labelledby="<?php echo esc_attr( $heading_id ); ?>">
 			<header class="atum-settings-card__header">
-				<h3 id="<?php echo esc_attr( $heading_id ); ?>"><?php echo esc_html( $title ); ?></h3>
-				<p><?php echo esc_html( $description ); ?></p>
+				<?php if ( '' !== $icon_svg ) : ?>
+					<div class="atum-settings-card__header-icon" aria-hidden="true"><?php echo $icon_svg; ?></div>
+				<?php endif; ?>
+				<div class="atum-settings-card__header-text">
+					<h3 id="<?php echo esc_attr( $heading_id ); ?>"><?php echo esc_html( $title ); ?></h3>
+					<p><?php echo esc_html( $description ); ?></p>
+				</div>
 			</header>
 			<div class="atum-settings-card__body">
 				<?php foreach ( $fields as $field ) : ?>
@@ -2220,6 +2272,99 @@ class Atum_Mailer_Admin_Controller {
 				<?php endforeach; ?>
 			</div>
 		</section>
+		<?php
+	}
+
+	/**
+	 * Render the DNS health section for the settings page.
+	 */
+	private function render_dns_health_section() {
+		$dns = $this->build_postmark_dns_check();
+		$domain = esc_html( (string) $dns['domain'] );
+		$checks = array(
+			array(
+				'label'  => __( 'SPF', 'atum-mailer' ),
+				'host'   => $domain,
+				'type'   => 'TXT',
+				'expect' => 'v=spf1 include:spf.mtasv.net',
+				'pass'   => ! empty( $dns['spf_pass'] ),
+			),
+			array(
+				'label'  => __( 'DKIM', 'atum-mailer' ),
+				'host'   => 'pm._domainkey.' . $domain,
+				'type'   => 'TXT',
+				'expect' => 'v=DKIM1; k=rsa; p=…',
+				'pass'   => ! empty( $dns['dkim_pass'] ),
+			),
+			array(
+				'label'  => __( 'DMARC', 'atum-mailer' ),
+				'host'   => '_dmarc.' . $domain,
+				'type'   => 'TXT',
+				'expect' => 'v=DMARC1; p=…',
+				'pass'   => ! empty( $dns['dmarc_pass'] ),
+			),
+			array(
+				'label'  => __( 'Return-Path', 'atum-mailer' ),
+				'host'   => 'pm-bounces.' . $domain,
+				'type'   => 'CNAME',
+				'expect' => 'pm.mtasv.net',
+				'pass'   => ! empty( $dns['return_path_pass'] ),
+			),
+		);
+		$pass_count = count( array_filter( array_column( $checks, 'pass' ) ) );
+		$total      = count( $checks );
+		$all_pass   = $pass_count === $total;
+		?>
+		<div class="atum-dns-health" role="region" aria-label="<?php esc_attr_e( 'Domain DNS Health', 'atum-mailer' ); ?>">
+			<div class="atum-dns-health__header">
+				<div class="atum-dns-health__title-row">
+					<h3><?php esc_html_e( 'Domain DNS Health', 'atum-mailer' ); ?></h3>
+					<span class="atum-pill <?php echo $all_pass ? 'is-good' : 'is-warn'; ?>">
+						<?php echo esc_html( $pass_count . '/' . $total ); ?>
+					</span>
+				</div>
+				<?php if ( '' !== $domain ) : ?>
+					<p><?php
+						printf(
+							/* translators: %s: domain name */
+							esc_html__( 'Checking Postmark DNS records for %s', 'atum-mailer' ),
+							'<code>' . $domain . '</code>'
+						);
+					?></p>
+				<?php else : ?>
+					<p><?php esc_html_e( 'Unable to determine the site domain.', 'atum-mailer' ); ?></p>
+				<?php endif; ?>
+			</div>
+			<ul class="atum-dns-health__list">
+				<?php foreach ( $checks as $check ) : ?>
+					<li class="atum-dns-health__record <?php echo $check['pass'] ? 'is-pass' : 'is-fail'; ?>">
+						<div class="atum-dns-health__record-status">
+							<span class="atum-dns-health__indicator <?php echo $check['pass'] ? 'is-pass' : 'is-fail'; ?>" aria-hidden="true">
+								<?php echo $check['pass'] ? '&#10003;' : '&#10007;'; ?>
+							</span>
+						</div>
+						<div class="atum-dns-health__record-info">
+							<strong><?php echo esc_html( $check['label'] ); ?></strong>
+							<span class="atum-dns-health__record-host"><?php echo esc_html( $check['host'] ); ?></span>
+							<span class="atum-dns-health__record-type"><?php echo esc_html( $check['type'] ); ?></span>
+						</div>
+						<div class="atum-dns-health__record-expect">
+							<code><?php echo esc_html( $check['expect'] ); ?></code>
+						</div>
+						<div class="atum-dns-health__record-result">
+							<span class="atum-dns-health__badge <?php echo $check['pass'] ? 'is-pass' : 'is-fail'; ?>">
+								<?php echo $check['pass'] ? esc_html__( 'Found', 'atum-mailer' ) : esc_html__( 'Missing', 'atum-mailer' ); ?>
+							</span>
+						</div>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+			<?php if ( ! $all_pass ) : ?>
+				<div class="atum-dns-health__help">
+					<p><?php esc_html_e( 'Add the missing records in your DNS provider, then reload this page to re-check.', 'atum-mailer' ); ?></p>
+				</div>
+			<?php endif; ?>
+		</div>
 		<?php
 	}
 
@@ -2308,10 +2453,13 @@ class Atum_Mailer_Admin_Controller {
 	private function render_checkbox_field( $name, $label ) {
 		$options = $this->settings->get_options();
 		$value   = empty( $options[ $name ] ) ? 0 : 1;
+		$field_id = 'atum-toggle-' . sanitize_key( $name );
 		?>
-		<label>
-			<input type="checkbox" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[' . $name . ']' ); ?>" value="1" <?php checked( 1, $value ); ?> />
-			<?php echo esc_html( $label ); ?>
+		<label class="atum-toggle" for="<?php echo esc_attr( $field_id ); ?>">
+			<input type="hidden" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[' . $name . ']' ); ?>" value="0" />
+			<input class="atum-toggle__input" type="checkbox" id="<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[' . $name . ']' ); ?>" value="1" <?php checked( 1, $value ); ?> />
+			<span class="atum-toggle__track" aria-hidden="true"></span>
+			<span class="atum-toggle__label"><?php echo esc_html( $label ); ?></span>
 		</label>
 		<?php
 	}
