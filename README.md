@@ -12,6 +12,7 @@ atum.mailer is a WordPress plugin by [atum.tech](https://atum.tech) that routes 
 - Expanded telemetry fields (`attempt_count`, `next_attempt_at`, `last_error_code`, `delivery_mode`)
 - Daily cron retention cleanup (moved off send path)
 - Optional Postmark webhook ingestion endpoint (`/wp-json/atum-mailer/v1/postmark/webhook`)
+  - Signature verification enabled by default with replay checks and rate limiting
 - Completed admin UX behavior for:
   - From email quick-fill and local-part builder
   - Multi-recipient test email chips
@@ -79,6 +80,8 @@ git push origin v0.5.0
 - Setup guide: `docs/setup-guide.md`
 - Operations runbook: `docs/operations-runbook.md`
 - Troubleshooting map: `docs/troubleshooting-map.md`
+- Security hardening guide: `docs/security-hardening.md`
+- Pre-release security checklist: `docs/pre-release-security-checklist.md`
 
 ## Alert Hooks
 
@@ -91,3 +94,11 @@ Threshold and cooldown tuning filters:
 - `atum_mailer_alert_failure_rate_threshold`
 - `atum_mailer_alert_queue_backlog_threshold`
 - `atum_mailer_alert_cooldown_seconds`
+
+Webhook hardening filters:
+
+- `atum_mailer_webhook_require_signature`
+- `atum_mailer_webhook_replay_window_seconds`
+- `atum_mailer_webhook_rate_limit_per_minute`
+- `atum_mailer_webhook_allowed_ip_ranges`
+- `atum_mailer_webhook_trust_forwarded_ip_headers`

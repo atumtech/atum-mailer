@@ -19,7 +19,9 @@ final class BootstrapTest extends TestCase {
 
 		Atum_Mailer_Bootstrap::activate();
 
-		$this->assertSame( 'legacy-token-xyz', (string) get_option( Atum_Mailer_Settings_Repository::TOKEN_OPTION_KEY, '' ) );
+		$settings = new Atum_Mailer_Settings_Repository();
+		$this->assertSame( 'legacy-token-xyz', $settings->get_token() );
+		$this->assertNotSame( '', (string) get_option( Atum_Mailer_Settings_Repository::TOKEN_OPTION_KEY, '' ) );
 		$this->assertNotFalse( wp_next_scheduled( Atum_Mailer_Bootstrap::CLEANUP_CRON_HOOK ) );
 		$this->assertNotFalse( wp_next_scheduled( Atum_Mailer_Bootstrap::ALERT_CRON_HOOK ) );
 		$this->assertSame( Atum_Mailer_Log_Repository::DB_VERSION, (string) get_option( Atum_Mailer_Log_Repository::DB_VERSION_OPTION, '' ) );

@@ -13,8 +13,13 @@ mkdir -p "${PACKAGE_DIR}"
 rsync -a "${ROOT_DIR}/" "${PACKAGE_DIR}/" \
   --exclude '.git' \
   --exclude '.github' \
+  --exclude '.vscode' \
+  --exclude '.idea' \
   --exclude '.DS_Store' \
   --exclude '.phpunit.result.cache' \
+  --exclude 'scripts' \
+  --exclude 'package.json' \
+  --exclude 'package-lock.json' \
   --exclude 'tests' \
   --exclude 'dist' \
   --exclude 'phpunit.xml.dist'

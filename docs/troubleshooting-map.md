@@ -27,6 +27,8 @@
   - `/wp-json/atum-mailer/v1/postmark/webhook`
 - Confirm `X-Atum-Webhook-Secret` matches plugin secret.
 - Validate Postmark webhook configuration and event selections.
+- If source allowlist is enabled, confirm sender IP/CIDR is included.
+- If behind CDN/proxy, confirm forwarded header trust is configured intentionally.
 
 ## Symptom: Token Reveal/Connect Issues
 

@@ -23,13 +23,15 @@ final class SettingsRepositoryTest extends TestCase {
 			$this->assertArrayHasKey( 'webhook_require_signature', $defaults );
 			$this->assertArrayHasKey( 'webhook_replay_window_seconds', $defaults );
 			$this->assertArrayHasKey( 'webhook_rate_limit_per_minute', $defaults );
+			$this->assertArrayHasKey( 'webhook_allowed_ip_ranges', $defaults );
 			$this->assertSame( 0, $defaults['allow_token_reveal'] );
 			$this->assertSame( 'metadata', $defaults['log_detail_mode'] );
 			$this->assertSame( 'immediate', $defaults['delivery_mode'] );
 			$this->assertSame( 0, $defaults['fallback_to_wp_mail'] );
-			$this->assertSame( 0, $defaults['webhook_require_signature'] );
+			$this->assertSame( 1, $defaults['webhook_require_signature'] );
 			$this->assertSame( 300, $defaults['webhook_replay_window_seconds'] );
 			$this->assertSame( 120, $defaults['webhook_rate_limit_per_minute'] );
+			$this->assertSame( '', $defaults['webhook_allowed_ip_ranges'] );
 		}
 
 	public function test_sanitize_options_enforces_enums_and_bounds(): void {
@@ -50,6 +52,7 @@ final class SettingsRepositoryTest extends TestCase {
 				'webhook_require_signature' => 1,
 				'webhook_replay_window_seconds' => -1,
 				'webhook_rate_limit_per_minute' => 999999,
+				'webhook_allowed_ip_ranges' => "203.0.113.10\n203.0.113.0/24\nbad-entry\n2001:db8::/32\n198.51.100.2/999",
 			);
 
 		$sanitized = $repo->sanitize_options( $input );
@@ -68,9 +71,10 @@ final class SettingsRepositoryTest extends TestCase {
 			$this->assertSame( 1, $sanitized['webhook_require_signature'] );
 			$this->assertSame( 30, $sanitized['webhook_replay_window_seconds'] );
 			$this->assertSame( 5000, $sanitized['webhook_rate_limit_per_minute'] );
-			$this->assertSame( '', $sanitized['postmark_server_token'] );
+			$this->assertSame( "203.0.113.10\n203.0.113.0/24\n2001:db8::/32", $sanitized['webhook_allowed_ip_ranges'] );
+		$this->assertSame( '', $sanitized['postmark_server_token'] );
 		$this->assertSame( '', $sanitized['postmark_webhook_secret'] );
-		$this->assertSame( 'secret-abc', (string) get_option( Atum_Mailer_Settings_Repository::WEBHOOK_SECRET_OPTION_KEY, '' ) );
+		$this->assertSame( 'secret-abc', $repo->get_webhook_secret() );
 	}
 
 	public function test_sanitize_options_preserves_existing_webhook_secret_when_blank_input_is_submitted(): void {
@@ -84,7 +88,7 @@ final class SettingsRepositoryTest extends TestCase {
 		);
 
 		$this->assertSame( '', $sanitized['postmark_webhook_secret'] );
-		$this->assertSame( 'keep-me', (string) get_option( Atum_Mailer_Settings_Repository::WEBHOOK_SECRET_OPTION_KEY, '' ) );
+		$this->assertSame( 'keep-me', $repo->get_webhook_secret() );
 	}
 
 	public function test_sanitize_options_can_explicitly_clear_existing_webhook_secret(): void {
@@ -115,7 +119,8 @@ final class SettingsRepositoryTest extends TestCase {
 		$this->assertSame( '', (string) get_option( Atum_Mailer_Settings_Repository::TOKEN_OPTION_KEY, '' ) );
 		$repo->maybe_migrate_legacy_options();
 
-		$this->assertSame( 'legacy-token-123', (string) get_option( Atum_Mailer_Settings_Repository::TOKEN_OPTION_KEY ) );
+		$this->assertSame( 'legacy-token-123', $repo->get_token() );
+		$this->assertNotSame( '', (string) get_option( Atum_Mailer_Settings_Repository::TOKEN_OPTION_KEY, '' ) );
 
 		$merged = get_option( Atum_Mailer_Settings_Repository::OPTION_KEY );
 		$this->assertIsArray( $merged );
@@ -138,7 +143,8 @@ final class SettingsRepositoryTest extends TestCase {
 
 		$options = $repo->get_options();
 		$this->assertSame( 'legacy-token-xyz', $options['postmark_server_token'] );
-		$this->assertSame( 'legacy-token-xyz', (string) get_option( Atum_Mailer_Settings_Repository::TOKEN_OPTION_KEY, '' ) );
+		$this->assertSame( 'legacy-token-xyz', $repo->get_token() );
+		$this->assertNotSame( '', (string) get_option( Atum_Mailer_Settings_Repository::TOKEN_OPTION_KEY, '' ) );
 
 		$stored = get_option( Atum_Mailer_Settings_Repository::OPTION_KEY, array() );
 		$this->assertIsArray( $stored );
@@ -158,7 +164,8 @@ final class SettingsRepositoryTest extends TestCase {
 
 		$options = $repo->get_options();
 		$this->assertSame( 'legacy-webhook-secret', $options['postmark_webhook_secret'] );
-		$this->assertSame( 'legacy-webhook-secret', (string) get_option( Atum_Mailer_Settings_Repository::WEBHOOK_SECRET_OPTION_KEY, '' ) );
+		$this->assertSame( 'legacy-webhook-secret', $repo->get_webhook_secret() );
+		$this->assertNotSame( '', (string) get_option( Atum_Mailer_Settings_Repository::WEBHOOK_SECRET_OPTION_KEY, '' ) );
 
 		$stored = get_option( Atum_Mailer_Settings_Repository::OPTION_KEY, array() );
 		$this->assertIsArray( $stored );

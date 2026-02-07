@@ -277,6 +277,11 @@ class Atum_Mailer_Bootstrap {
 	 */
 	public function can_receive_webhook( WP_REST_Request $request ) {
 		$options = $this->settings->get_options();
+		$allowlist_check = $this->enforce_webhook_source_allowlist( $request, $options );
+		if ( is_wp_error( $allowlist_check ) ) {
+			return $allowlist_check;
+		}
+
 		$rate_limit_check = $this->enforce_webhook_rate_limit( $request, $options );
 		if ( is_wp_error( $rate_limit_check ) ) {
 			return $rate_limit_check;
@@ -449,6 +454,165 @@ class Atum_Mailer_Bootstrap {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Apply optional source IP allowlist for webhook ingress.
+	 *
+	 * @param WP_REST_Request      $request Request.
+	 * @param array<string, mixed> $options Plugin options.
+	 * @return true|WP_Error
+	 */
+	private function enforce_webhook_source_allowlist( WP_REST_Request $request, $options = array() ) {
+		$default_ranges = $this->normalize_webhook_allowed_ip_ranges( $options['webhook_allowed_ip_ranges'] ?? '' );
+		$allowed_ranges = apply_filters( 'atum_mailer_webhook_allowed_ip_ranges', $default_ranges, $request, $options );
+		$allowed_ranges = $this->normalize_webhook_allowed_ip_ranges( $allowed_ranges );
+		if ( empty( $allowed_ranges ) ) {
+			return true;
+		}
+
+		$ip = $this->resolve_webhook_request_ip( $request, $options );
+		if ( '' === $ip ) {
+			return new WP_Error( 'atum_mailer_webhook_source_ip_unknown', __( 'Unable to determine webhook source IP.', 'atum-mailer' ), array( 'status' => 403 ) );
+		}
+
+		foreach ( $allowed_ranges as $range ) {
+			if ( $this->webhook_ip_matches_range( $ip, $range ) ) {
+				return true;
+			}
+		}
+
+		return new WP_Error( 'atum_mailer_webhook_ip_not_allowed', __( 'Webhook source IP is not allowlisted.', 'atum-mailer' ), array( 'status' => 403 ) );
+	}
+
+	/**
+	 * Normalize allowlisted source IPs/CIDRs from string/array input.
+	 *
+	 * @param mixed $raw Raw allowlist input.
+	 * @return array<int, string>
+	 */
+	private function normalize_webhook_allowed_ip_ranges( $raw ) {
+		if ( is_array( $raw ) ) {
+			$items = $raw;
+		} else {
+			$items = preg_split( '/[\s,;]+/', (string) $raw );
+		}
+
+		if ( ! is_array( $items ) ) {
+			return array();
+		}
+
+		$out = array();
+		foreach ( $items as $item ) {
+			$candidate = trim( (string) $item );
+			if ( '' === $candidate ) {
+				continue;
+			}
+
+			if ( false !== filter_var( $candidate, FILTER_VALIDATE_IP ) ) {
+				$out[] = $candidate;
+				continue;
+			}
+
+			if ( false === strpos( $candidate, '/' ) ) {
+				continue;
+			}
+
+			list( $base, $prefix ) = array_map( 'trim', explode( '/', $candidate, 2 ) );
+			if ( false === filter_var( $base, FILTER_VALIDATE_IP ) || ! ctype_digit( $prefix ) ) {
+				continue;
+			}
+
+			$prefix_int = (int) $prefix;
+			$is_ipv6    = false !== strpos( $base, ':' );
+			$max_prefix = $is_ipv6 ? 128 : 32;
+			if ( $prefix_int < 0 || $prefix_int > $max_prefix ) {
+				continue;
+			}
+
+			$out[] = $base . '/' . $prefix_int;
+		}
+
+		return array_values( array_unique( $out ) );
+	}
+
+	/**
+	 * Match one source IP against allowlist entry.
+	 *
+	 * @param string $ip Source IP.
+	 * @param string $range Exact IP or CIDR.
+	 * @return bool
+	 */
+	private function webhook_ip_matches_range( $ip, $range ) {
+		$range = trim( (string) $range );
+		if ( '' === $range ) {
+			return false;
+		}
+
+		if ( false === strpos( $range, '/' ) ) {
+			return $this->webhook_ip_equals( $ip, $range );
+		}
+
+		return $this->webhook_ip_in_cidr( $ip, $range );
+	}
+
+	/**
+	 * Constant-time-ish IP equality check via binary forms.
+	 *
+	 * @param string $left Left IP.
+	 * @param string $right Right IP.
+	 * @return bool
+	 */
+	private function webhook_ip_equals( $left, $right ) {
+		$left_bin  = inet_pton( (string) $left );
+		$right_bin = inet_pton( (string) $right );
+		if ( false === $left_bin || false === $right_bin ) {
+			return false;
+		}
+
+		return hash_equals( $left_bin, $right_bin );
+	}
+
+	/**
+	 * Check if an IP is inside CIDR range for IPv4/IPv6.
+	 *
+	 * @param string $ip Source IP.
+	 * @param string $cidr CIDR expression.
+	 * @return bool
+	 */
+	private function webhook_ip_in_cidr( $ip, $cidr ) {
+		list( $network, $prefix ) = array_map( 'trim', explode( '/', (string) $cidr, 2 ) );
+		if ( '' === $network || '' === $prefix || ! ctype_digit( $prefix ) ) {
+			return false;
+		}
+
+		$ip_bin      = inet_pton( (string) $ip );
+		$network_bin = inet_pton( $network );
+		if ( false === $ip_bin || false === $network_bin ) {
+			return false;
+		}
+		if ( strlen( $ip_bin ) !== strlen( $network_bin ) ) {
+			return false;
+		}
+
+		$prefix_bits = (int) $prefix;
+		$max_bits    = strlen( $ip_bin ) * 8;
+		if ( $prefix_bits < 0 || $prefix_bits > $max_bits ) {
+			return false;
+		}
+
+		$full_bytes = intdiv( $prefix_bits, 8 );
+		$extra_bits = $prefix_bits % 8;
+
+		if ( $full_bytes > 0 && substr( $ip_bin, 0, $full_bytes ) !== substr( $network_bin, 0, $full_bytes ) ) {
+			return false;
+		}
+		if ( 0 === $extra_bits ) {
+			return true;
+		}
+
+		$mask = ( 0xFF << ( 8 - $extra_bits ) ) & 0xFF;
+		return ( ord( $ip_bin[ $full_bytes ] ) & $mask ) === ( ord( $network_bin[ $full_bytes ] ) & $mask );
 	}
 
 	/**

@@ -51,7 +51,7 @@ Yes. Use `Log Detail Mode = Metadata` (default) to avoid persisting full message
 
 = How do webhooks authenticate? =
 
-Set `Webhook Shared Secret` in settings, then send that value in the `X-Atum-Webhook-Secret` header from Postmark.
+Set `Webhook Shared Secret` in settings. By default, atum.mailer also requires signed webhook timestamp headers (`X-Atum-Webhook-Timestamp` and `X-Atum-Webhook-Signature`) plus the shared secret header (`X-Atum-Webhook-Secret`).
 
 = Can I wire alerts to Slack/email? =
 

@@ -23,6 +23,7 @@ final class WebhookTest extends TestCase {
 
 		$options                           = $this->settings->default_options();
 		$options['postmark_webhook_secret'] = 'super-secret';
+		$options['webhook_require_signature'] = 0;
 		$options['mail_retention']         = 1;
 		$this->settings->update_raw_options( $options );
 		update_option( Atum_Mailer_Settings_Repository::WEBHOOK_SECRET_OPTION_KEY, 'super-secret' );
@@ -336,6 +337,71 @@ final class WebhookTest extends TestCase {
 		unset( $_SERVER['REMOTE_ADDR'] );
 	}
 
+	public function test_webhook_permission_rejects_non_allowlisted_source_ip(): void {
+		$_SERVER['REMOTE_ADDR'] = '198.51.100.90';
+
+		$options                               = $this->settings->default_options();
+		$options['mail_retention']             = 1;
+		$options['postmark_webhook_secret']    = 'super-secret';
+		$options['webhook_allowed_ip_ranges']  = "203.0.113.0/24\n2001:db8::/32";
+		$this->settings->update_raw_options( $options );
+		update_option( Atum_Mailer_Settings_Repository::WEBHOOK_SECRET_OPTION_KEY, 'super-secret' );
+
+		$request = new WP_REST_Request(
+			array( 'x-atum-webhook-secret' => 'super-secret' ),
+			array( 'RecordType' => 'Delivery', 'MessageID' => 'mid-allowlist-deny' )
+		);
+
+		$result = $this->bootstrap->can_receive_webhook( $request );
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'atum_mailer_webhook_ip_not_allowed', $result->get_error_code() );
+
+		unset( $_SERVER['REMOTE_ADDR'] );
+	}
+
+	public function test_webhook_permission_accepts_allowlisted_source_ip(): void {
+		$_SERVER['REMOTE_ADDR'] = '198.51.100.42';
+
+		$options                               = $this->settings->default_options();
+		$options['mail_retention']             = 1;
+		$options['postmark_webhook_secret']    = 'super-secret';
+		$options['webhook_require_signature']  = 0;
+		$options['webhook_allowed_ip_ranges']  = "203.0.113.0/24\n198.51.100.42";
+		$this->settings->update_raw_options( $options );
+		update_option( Atum_Mailer_Settings_Repository::WEBHOOK_SECRET_OPTION_KEY, 'super-secret' );
+
+		$request = new WP_REST_Request(
+			array( 'x-atum-webhook-secret' => 'super-secret' ),
+			array( 'RecordType' => 'Delivery', 'MessageID' => 'mid-allowlist-allow' )
+		);
+
+		$result = $this->bootstrap->can_receive_webhook( $request );
+		$this->assertTrue( $result );
+
+		unset( $_SERVER['REMOTE_ADDR'] );
+	}
+
+	public function test_webhook_permission_accepts_allowlist_defined_by_filter(): void {
+		$_SERVER['REMOTE_ADDR'] = '198.51.100.55';
+
+		add_filter(
+			'atum_mailer_webhook_allowed_ip_ranges',
+			static function () {
+				return array( '198.51.100.0/24' );
+			}
+		);
+
+		$request = new WP_REST_Request(
+			array( 'x-atum-webhook-secret' => 'super-secret' ),
+			array( 'RecordType' => 'Delivery', 'MessageID' => 'mid-allowlist-filter' )
+		);
+
+		$result = $this->bootstrap->can_receive_webhook( $request );
+		$this->assertTrue( $result );
+
+		unset( $_SERVER['REMOTE_ADDR'] );
+	}
+
 	public function test_webhook_permission_requires_signature_when_option_enabled(): void {
 		$options                              = $this->settings->default_options();
 		$options['mail_retention']            = 1;
@@ -385,6 +451,7 @@ final class WebhookTest extends TestCase {
 		$options                                   = $this->settings->default_options();
 		$options['mail_retention']                 = 1;
 		$options['postmark_webhook_secret']        = 'super-secret';
+		$options['webhook_require_signature']      = 0;
 		$options['webhook_rate_limit_per_minute']  = 1;
 		$this->settings->update_raw_options( $options );
 		update_option( Atum_Mailer_Settings_Repository::WEBHOOK_SECRET_OPTION_KEY, 'super-secret' );

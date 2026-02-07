@@ -22,7 +22,8 @@
    - Admin: `Process Queue Now`
    - CLI: `wp atum-mailer queue run`
 4. Use bulk retry or selective resend with overrides for impacted messages.
-5. If persistent failures continue, enable fallback and notify stakeholders.
+5. For webhook-related issues, verify shared secret, signature requirements, and source IP allowlist/proxy trust settings.
+6. If persistent failures continue, enable fallback and notify stakeholders.
 
 ## Queue Recovery Commands
 
@@ -61,3 +62,9 @@ Configure with filters:
 - `atum_mailer_alert_failure_rate_threshold`
 - `atum_mailer_alert_queue_backlog_threshold`
 - `atum_mailer_alert_cooldown_seconds`
+
+## Security Maintenance
+
+Before major version bumps or release packaging, run:
+
+- `docs/pre-release-security-checklist.md`

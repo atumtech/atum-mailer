@@ -28,6 +28,9 @@ Use `Queue` for production sites that need better resilience during provider/API
 - `Log Detail Mode`: `metadata`
 - `Retention`: enabled with 30-90 day window
 - `Webhook Secret`: configured
+- `Require Signature Verification`: enabled (default)
+- `Webhook Replay Window (s)`: `300`
+- `Webhook Source IP Allowlist`: configured (when provider CIDRs are known)
 
 ## 5. Verify Final State
 
@@ -49,3 +52,8 @@ On `Dashboard`, confirm:
   - `atum_mailer_alert_failure_rate_threshold`
   - `atum_mailer_alert_queue_backlog_threshold`
   - `atum_mailer_alert_threshold_breach`
+
+## 7. Security References
+
+- `docs/security-hardening.md`
+- `docs/pre-release-security-checklist.md`

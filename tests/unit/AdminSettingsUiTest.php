@@ -44,6 +44,7 @@ final class AdminSettingsUiTest extends TestCase {
 			$this->assertStringContainsString( 'atum-field-webhook-require-signature', $html );
 			$this->assertStringContainsString( 'atum-field-webhook-replay-window', $html );
 			$this->assertStringContainsString( 'atum-field-webhook-rate-limit', $html );
+			$this->assertStringContainsString( 'atum-field-webhook-allowlist', $html );
 		}
 
 	public function test_inline_notice_renders_action_link_when_present(): void {
@@ -61,5 +62,20 @@ final class AdminSettingsUiTest extends TestCase {
 		$this->assertStringContainsString( 'atum-inline-notice__action', $html );
 		$this->assertStringContainsString( 'Open Logs', $html );
 		$this->assertStringContainsString( 'aria-live="polite"', $html );
+	}
+
+	public function test_inline_notice_drops_external_action_link(): void {
+		$_GET['tab']                      = 'settings';
+		$_GET['atum_mailer_notice']       = 'success';
+		$_GET['atum_mailer_message']      = 'Saved';
+		$_GET['atum_mailer_notice_link']  = 'https://evil.example/phish';
+		$_GET['atum_mailer_notice_label'] = 'Open Logs';
+
+		ob_start();
+		$this->admin->render_admin_page();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'atum-inline-notice', $html );
+		$this->assertStringNotContainsString( 'atum-inline-notice__action', $html );
 	}
 }

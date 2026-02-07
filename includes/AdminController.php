@@ -176,6 +176,7 @@ class Atum_Mailer_Admin_Controller {
 			add_settings_field( 'webhook_require_signature', __( 'Require Signature Verification', 'atum-mailer' ), array( $this, 'render_webhook_require_signature_field' ), 'atum-mailer-settings', 'atum_mailer_webhooks' );
 			add_settings_field( 'webhook_replay_window_seconds', __( 'Webhook Replay Window (s)', 'atum-mailer' ), array( $this, 'render_webhook_replay_window_field' ), 'atum-mailer-settings', 'atum_mailer_webhooks' );
 			add_settings_field( 'webhook_rate_limit_per_minute', __( 'Webhook Rate Limit (/min/IP)', 'atum-mailer' ), array( $this, 'render_webhook_rate_limit_field' ), 'atum-mailer-settings', 'atum_mailer_webhooks' );
+			add_settings_field( 'webhook_allowed_ip_ranges', __( 'Webhook Source IP Allowlist', 'atum-mailer' ), array( $this, 'render_webhook_allowed_ip_ranges_field' ), 'atum-mailer-settings', 'atum_mailer_webhooks' );
 		}
 
 	/**
@@ -962,7 +963,7 @@ class Atum_Mailer_Admin_Controller {
 	private function render_inline_notice() {
 		$type    = sanitize_key( wp_unslash( $_GET['atum_mailer_notice'] ?? '' ) );
 		$message = sanitize_text_field( wp_unslash( $_GET['atum_mailer_message'] ?? '' ) );
-		$link    = sanitize_text_field( wp_unslash( $_GET['atum_mailer_notice_link'] ?? '' ) );
+		$link    = $this->sanitize_notice_link( wp_unslash( $_GET['atum_mailer_notice_link'] ?? '' ) );
 		$label   = sanitize_text_field( wp_unslash( $_GET['atum_mailer_notice_label'] ?? '' ) );
 
 		if ( '' === $type || '' === $message ) {
@@ -985,6 +986,37 @@ class Atum_Mailer_Admin_Controller {
 			</p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Restrict inline notice action links to same-host admin URLs.
+	 *
+	 * @param string $raw_link Candidate URL.
+	 * @return string
+	 */
+	private function sanitize_notice_link( $raw_link ) {
+		$link = trim( (string) $raw_link );
+		if ( '' === $link ) {
+			return '';
+		}
+
+		$parts = wp_parse_url( $link );
+		if ( ! is_array( $parts ) ) {
+			return '';
+		}
+
+		$scheme = strtolower( (string) ( $parts['scheme'] ?? '' ) );
+		$host   = strtolower( (string) ( $parts['host'] ?? '' ) );
+		if ( ! in_array( $scheme, array( 'http', 'https' ), true ) || '' === $host ) {
+			return '';
+		}
+
+		$admin_host = strtolower( (string) wp_parse_url( admin_url( '/' ), PHP_URL_HOST ) );
+		if ( '' === $admin_host || $host !== $admin_host ) {
+			return '';
+		}
+
+		return $link;
 	}
 
 	/**
@@ -2082,11 +2114,15 @@ class Atum_Mailer_Admin_Controller {
 					'label'   => __( 'Webhook Replay Window (s)', 'atum-mailer' ),
 					'callback'=> 'render_webhook_replay_window_field',
 				),
-				array(
-					'label'   => __( 'Webhook Rate Limit (/min/IP)', 'atum-mailer' ),
-					'callback'=> 'render_webhook_rate_limit_field',
-				),
-			);
+					array(
+						'label'   => __( 'Webhook Rate Limit (/min/IP)', 'atum-mailer' ),
+						'callback'=> 'render_webhook_rate_limit_field',
+					),
+					array(
+						'label'   => __( 'Webhook Source IP Allowlist', 'atum-mailer' ),
+						'callback'=> 'render_webhook_allowed_ip_ranges_field',
+					),
+				);
 		?>
 		<section class="atum-card atum-card--full atum-settings-shell">
 			<form method="post" action="options.php" class="atum-settings-layout">
@@ -2258,6 +2294,7 @@ class Atum_Mailer_Admin_Controller {
 	public function render_webhook_section_help() {
 		$route = rest_url( 'atum-mailer/v1/postmark/webhook' );
 		echo '<p>' . esc_html__( 'Optional Postmark webhook endpoint. Set a shared secret and configure Postmark to send events to this URL.', 'atum-mailer' ) . '</p>';
+		echo '<p>' . esc_html__( 'For hardened deployments, require signatures and set source IP allowlist ranges. If behind a trusted proxy/CDN, enable forwarded-IP trust only when edge headers are protected.', 'atum-mailer' ) . '</p>';
 		echo '<p><code>' . esc_html( $route ) . '</code></p>';
 	}
 
@@ -2679,6 +2716,22 @@ class Atum_Mailer_Admin_Controller {
 		<div id="atum-field-webhook-rate-limit">
 			<input type="number" min="1" max="5000" step="1" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[webhook_rate_limit_per_minute]' ); ?>" value="<?php echo esc_attr( (string) $options['webhook_rate_limit_per_minute'] ); ?>" />
 			<p class="description"><?php esc_html_e( 'Per-IP webhook request cap per minute.', 'atum-mailer' ); ?></p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render webhook source allowlist field.
+	 *
+	 * @return void
+	 */
+	public function render_webhook_allowed_ip_ranges_field() {
+		$options = $this->settings->get_options();
+		$value   = (string) ( $options['webhook_allowed_ip_ranges'] ?? '' );
+		?>
+		<div id="atum-field-webhook-allowlist">
+			<textarea rows="4" class="large-text code" name="<?php echo esc_attr( Atum_Mailer_Settings_Repository::OPTION_KEY . '[webhook_allowed_ip_ranges]' ); ?>" placeholder="203.0.113.10&#10;203.0.113.0/24&#10;2001:db8::/32"><?php echo esc_html( $value ); ?></textarea>
+			<p class="description"><?php esc_html_e( 'Optional. One IP or CIDR range per line. When set, webhook requests from non-allowlisted sources are rejected.', 'atum-mailer' ); ?></p>
 		</div>
 		<?php
 	}

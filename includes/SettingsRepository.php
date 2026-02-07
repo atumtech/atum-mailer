@@ -13,6 +13,8 @@ class Atum_Mailer_Settings_Repository {
 	const OPTION_KEY             = 'atum_mailer_options';
 	const TOKEN_OPTION_KEY       = 'atum_mailer_postmark_token';
 	const WEBHOOK_SECRET_OPTION_KEY = 'atum_mailer_webhook_secret';
+	const SECRET_ENCRYPTION_PREFIX_SODIUM  = 'enc:v1:';
+	const SECRET_ENCRYPTION_PREFIX_OPENSSL = 'enc:v1g:';
 	const LAST_CLEANUP_OPTION    = 'atum_mailer_last_cleanup';
 	const QUEUE_OPTION_KEY       = 'atum_mailer_queue_jobs';
 	const LAST_API_OUTAGE_OPTION = 'atum_mailer_last_api_outage';
@@ -48,9 +50,10 @@ class Atum_Mailer_Settings_Repository {
 			'delivery_mode'           => 'immediate',
 				'fallback_to_wp_mail'     => 0,
 				'postmark_webhook_secret' => '',
-				'webhook_require_signature' => 0,
+				'webhook_require_signature' => 1,
 				'webhook_replay_window_seconds' => 300,
 				'webhook_rate_limit_per_minute' => 120,
+				'webhook_allowed_ip_ranges' => '',
 				'queue_max_attempts'      => 5,
 				'queue_retry_base_delay'  => 60,
 				'queue_retry_max_delay'   => 3600,
@@ -68,15 +71,15 @@ class Atum_Mailer_Settings_Repository {
 			$current = array();
 		}
 
-		$token = (string) get_option( self::TOKEN_OPTION_KEY, '' );
+		$token = $this->get_token();
 		if ( '' === $token && ! empty( $current['postmark_server_token'] ) ) {
 			$token = sanitize_text_field( (string) $current['postmark_server_token'] );
-			update_option( self::TOKEN_OPTION_KEY, $token, false );
+			$this->set_token( $token );
 		}
-		$webhook_secret = (string) get_option( self::WEBHOOK_SECRET_OPTION_KEY, '' );
+		$webhook_secret = $this->get_webhook_secret();
 		if ( '' === $webhook_secret && ! empty( $current['postmark_webhook_secret'] ) ) {
 			$webhook_secret = sanitize_text_field( (string) $current['postmark_webhook_secret'] );
-			update_option( self::WEBHOOK_SECRET_OPTION_KEY, $webhook_secret, false );
+			$this->set_webhook_secret( $webhook_secret );
 		}
 
 		$merged                            = wp_parse_args( $current, $this->default_options() );
@@ -93,14 +96,14 @@ class Atum_Mailer_Settings_Repository {
 	public function get_options() {
 		$stored  = get_option( self::OPTION_KEY, array() );
 		$options = wp_parse_args( is_array( $stored ) ? $stored : array(), $this->default_options() );
-		$token   = (string) get_option( self::TOKEN_OPTION_KEY, '' );
-		$webhook_secret = (string) get_option( self::WEBHOOK_SECRET_OPTION_KEY, '' );
+		$token   = $this->get_token();
+		$webhook_secret = $this->get_webhook_secret();
 
 		if ( '' === $token && ! empty( $options['postmark_server_token'] ) ) {
 			$legacy = sanitize_text_field( (string) $options['postmark_server_token'] );
 			if ( '' !== $legacy ) {
 				$token = $legacy;
-				update_option( self::TOKEN_OPTION_KEY, $token, false );
+				$this->set_token( $token );
 			}
 			$options['postmark_server_token'] = '';
 			update_option( self::OPTION_KEY, $options );
@@ -109,7 +112,7 @@ class Atum_Mailer_Settings_Repository {
 			$legacy_secret = sanitize_text_field( (string) $options['postmark_webhook_secret'] );
 			if ( '' !== $legacy_secret ) {
 				$webhook_secret = $legacy_secret;
-				update_option( self::WEBHOOK_SECRET_OPTION_KEY, $webhook_secret, false );
+				$this->set_webhook_secret( $webhook_secret );
 			}
 			$options['postmark_webhook_secret'] = '';
 			update_option( self::OPTION_KEY, $options );
@@ -165,7 +168,7 @@ class Atum_Mailer_Settings_Repository {
 			return;
 		}
 
-		update_option( self::TOKEN_OPTION_KEY, $token, false );
+		update_option( self::TOKEN_OPTION_KEY, $this->encrypt_secret( $token ), false );
 	}
 
 	/**
@@ -174,7 +177,7 @@ class Atum_Mailer_Settings_Repository {
 	 * @return string
 	 */
 	public function get_token() {
-		return (string) get_option( self::TOKEN_OPTION_KEY, '' );
+		return $this->decrypt_secret( (string) get_option( self::TOKEN_OPTION_KEY, '' ) );
 	}
 
 	/**
@@ -184,6 +187,40 @@ class Atum_Mailer_Settings_Repository {
 	 */
 	public function clear_token() {
 		delete_option( self::TOKEN_OPTION_KEY );
+	}
+
+	/**
+	 * Set webhook secret.
+	 *
+	 * @param string $secret Secret value.
+	 * @return void
+	 */
+	public function set_webhook_secret( $secret ) {
+		$secret = sanitize_text_field( (string) $secret );
+		if ( '' === $secret ) {
+			delete_option( self::WEBHOOK_SECRET_OPTION_KEY );
+			return;
+		}
+
+		update_option( self::WEBHOOK_SECRET_OPTION_KEY, $this->encrypt_secret( $secret ), false );
+	}
+
+	/**
+	 * Get webhook secret.
+	 *
+	 * @return string
+	 */
+	public function get_webhook_secret() {
+		return $this->decrypt_secret( (string) get_option( self::WEBHOOK_SECRET_OPTION_KEY, '' ) );
+	}
+
+	/**
+	 * Clear webhook secret.
+	 *
+	 * @return void
+	 */
+	public function clear_webhook_secret() {
+		delete_option( self::WEBHOOK_SECRET_OPTION_KEY );
 	}
 
 	/**
@@ -216,6 +253,7 @@ class Atum_Mailer_Settings_Repository {
 			$output['webhook_require_signature'] = empty( $input['webhook_require_signature'] ) ? 0 : 1;
 			$output['webhook_replay_window_seconds'] = max( 30, min( DAY_IN_SECONDS, (int) ( $input['webhook_replay_window_seconds'] ?? $defaults['webhook_replay_window_seconds'] ) ) );
 			$output['webhook_rate_limit_per_minute'] = max( 1, min( 5000, (int) ( $input['webhook_rate_limit_per_minute'] ?? $defaults['webhook_rate_limit_per_minute'] ) ) );
+			$output['webhook_allowed_ip_ranges'] = $this->sanitize_webhook_ip_ranges( $input['webhook_allowed_ip_ranges'] ?? $defaults['webhook_allowed_ip_ranges'] );
 			$output['queue_max_attempts']     = max( 1, min( 20, (int) ( $input['queue_max_attempts'] ?? $defaults['queue_max_attempts'] ) ) );
 		$output['queue_retry_base_delay'] = max( 5, min( 3600, (int) ( $input['queue_retry_base_delay'] ?? $defaults['queue_retry_base_delay'] ) ) );
 		$output['queue_retry_max_delay']  = max( 60, min( DAY_IN_SECONDS, (int) ( $input['queue_retry_max_delay'] ?? $defaults['queue_retry_max_delay'] ) ) );
@@ -274,7 +312,7 @@ class Atum_Mailer_Settings_Repository {
 			$output['queue_retry_max_delay'] = $output['queue_retry_base_delay'];
 		}
 
-		$current_webhook_secret = (string) get_option( self::WEBHOOK_SECRET_OPTION_KEY, '' );
+		$current_webhook_secret = $this->get_webhook_secret();
 		$webhook_secret         = $current_webhook_secret;
 		$clear_webhook_secret   = ! empty( $input['postmark_webhook_secret_clear'] );
 		if ( $clear_webhook_secret ) {
@@ -286,12 +324,205 @@ class Atum_Mailer_Settings_Repository {
 			}
 		}
 		if ( '' === trim( $webhook_secret ) ) {
-			delete_option( self::WEBHOOK_SECRET_OPTION_KEY );
+			$this->clear_webhook_secret();
 		} else {
-			update_option( self::WEBHOOK_SECRET_OPTION_KEY, $webhook_secret, false );
+			$this->set_webhook_secret( $webhook_secret );
 		}
 
 		return $output;
+	}
+
+	/**
+	 * Sanitize webhook allowlisted IP ranges.
+	 *
+	 * Accepts exact IPs and CIDR ranges (IPv4/IPv6), comma/newline separated.
+	 *
+	 * @param mixed $raw Raw list.
+	 * @return string
+	 */
+	private function sanitize_webhook_ip_ranges( $raw ) {
+		if ( is_array( $raw ) ) {
+			$items = $raw;
+		} else {
+			$items = preg_split( '/[\s,;]+/', (string) $raw );
+		}
+
+		if ( ! is_array( $items ) ) {
+			return '';
+		}
+
+		$sanitized = array();
+		foreach ( $items as $item ) {
+			$candidate = trim( (string) $item );
+			if ( '' === $candidate ) {
+				continue;
+			}
+
+			if ( false !== filter_var( $candidate, FILTER_VALIDATE_IP ) ) {
+				$sanitized[] = $candidate;
+				continue;
+			}
+
+			if ( false === strpos( $candidate, '/' ) ) {
+				continue;
+			}
+
+			list( $base, $prefix ) = array_map( 'trim', explode( '/', $candidate, 2 ) );
+			if ( false === filter_var( $base, FILTER_VALIDATE_IP ) || ! ctype_digit( $prefix ) ) {
+				continue;
+			}
+
+			$prefix_int = (int) $prefix;
+			$is_ipv6    = false !== strpos( $base, ':' );
+			$max_prefix = $is_ipv6 ? 128 : 32;
+			if ( $prefix_int < 0 || $prefix_int > $max_prefix ) {
+				continue;
+			}
+
+			$sanitized[] = $base . '/' . $prefix_int;
+		}
+
+		$sanitized = array_values( array_unique( $sanitized ) );
+		return implode( "\n", $sanitized );
+	}
+
+	/**
+	 * Encrypt a secret for at-rest storage when cryptography is available.
+	 *
+	 * @param string $plaintext Secret.
+	 * @return string
+	 */
+	private function encrypt_secret( $plaintext ) {
+		$plaintext = sanitize_text_field( (string) $plaintext );
+		if ( '' === $plaintext ) {
+			return '';
+		}
+
+		$key = $this->secret_encryption_key();
+		if ( '' === $key ) {
+			return $plaintext;
+		}
+
+		if ( function_exists( 'sodium_crypto_secretbox' ) && defined( 'SODIUM_CRYPTO_SECRETBOX_NONCEBYTES' ) ) {
+			$nonce = random_bytes( SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
+			$ciphertext = sodium_crypto_secretbox( $plaintext, $nonce, $key );
+			return self::SECRET_ENCRYPTION_PREFIX_SODIUM . base64_encode( $nonce . $ciphertext );
+		}
+
+		if ( function_exists( 'openssl_encrypt' ) ) {
+			$iv  = random_bytes( 12 );
+			$tag = '';
+			$ciphertext = openssl_encrypt( $plaintext, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag, '', 16 );
+			if ( false !== $ciphertext && '' !== $tag ) {
+				return self::SECRET_ENCRYPTION_PREFIX_OPENSSL . base64_encode( $iv . $tag . $ciphertext );
+			}
+		}
+
+		return $plaintext;
+	}
+
+	/**
+	 * Decrypt a stored secret while supporting legacy plaintext records.
+	 *
+	 * @param string $stored Stored value.
+	 * @return string
+	 */
+	private function decrypt_secret( $stored ) {
+		$stored = trim( (string) $stored );
+		if ( '' === $stored ) {
+			return '';
+		}
+
+		$key = $this->secret_encryption_key();
+		if ( '' !== $key && 0 === strpos( $stored, self::SECRET_ENCRYPTION_PREFIX_SODIUM ) ) {
+			$payload = base64_decode( substr( $stored, strlen( self::SECRET_ENCRYPTION_PREFIX_SODIUM ) ), true );
+			if ( false === $payload || ! defined( 'SODIUM_CRYPTO_SECRETBOX_NONCEBYTES' ) || ! function_exists( 'sodium_crypto_secretbox_open' ) ) {
+				return '';
+			}
+			if ( strlen( $payload ) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ) {
+				return '';
+			}
+
+			$nonce = substr( $payload, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
+			$ciphertext = substr( $payload, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
+			$plaintext = sodium_crypto_secretbox_open( $ciphertext, $nonce, $key );
+			if ( false === $plaintext ) {
+				return '';
+			}
+
+			return sanitize_text_field( (string) $plaintext );
+		}
+
+		if ( '' !== $key && 0 === strpos( $stored, self::SECRET_ENCRYPTION_PREFIX_OPENSSL ) ) {
+			$payload = base64_decode( substr( $stored, strlen( self::SECRET_ENCRYPTION_PREFIX_OPENSSL ) ), true );
+			if ( false === $payload || ! function_exists( 'openssl_decrypt' ) ) {
+				return '';
+			}
+			if ( strlen( $payload ) <= 28 ) {
+				return '';
+			}
+
+			$iv = substr( $payload, 0, 12 );
+			$tag = substr( $payload, 12, 16 );
+			$ciphertext = substr( $payload, 28 );
+			$plaintext = openssl_decrypt( $ciphertext, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag, '' );
+			if ( false === $plaintext ) {
+				return '';
+			}
+
+			return sanitize_text_field( (string) $plaintext );
+		}
+
+		return sanitize_text_field( $stored );
+	}
+
+	/**
+	 * Resolve symmetric key bytes from WordPress salt material.
+	 *
+	 * @return string
+	 */
+	private function secret_encryption_key() {
+		$material = $this->secret_encryption_material();
+		if ( '' === $material ) {
+			return '';
+		}
+
+		return hash( 'sha256', $material, true );
+	}
+
+	/**
+	 * Build encryption material from WordPress/site identity.
+	 *
+	 * @return string
+	 */
+	private function secret_encryption_material() {
+		$parts = array();
+		if ( function_exists( 'wp_salt' ) ) {
+			$salt = trim( (string) wp_salt( 'auth' ) );
+			if ( '' !== $salt ) {
+				$parts[] = $salt;
+			}
+		}
+		if ( defined( 'AUTH_KEY' ) ) {
+			$auth = trim( (string) AUTH_KEY );
+			if ( '' !== $auth ) {
+				$parts[] = $auth;
+			}
+		}
+		if ( defined( 'SECURE_AUTH_KEY' ) ) {
+			$secure = trim( (string) SECURE_AUTH_KEY );
+			if ( '' !== $secure ) {
+				$parts[] = $secure;
+			}
+		}
+
+		if ( empty( $parts ) ) {
+			return '';
+		}
+
+		$parts[] = (string) home_url( '/' );
+		$parts[] = 'atum-mailer-secret-v1';
+		return implode( '|', $parts );
 	}
 
 	/**
