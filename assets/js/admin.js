@@ -65,6 +65,11 @@
         if (details && !details.open) {
           details.open = true;
         }
+        // Also open any <details> child of the target section
+        var childDetails = target.querySelector("details");
+        if (childDetails && !childDetails.open) {
+          childDetails.open = true;
+        }
         smoothScrollTo(target);
         // Brief highlight
         target.classList.add("atum-highlight");

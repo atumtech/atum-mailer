@@ -48,7 +48,7 @@ final class AdminDashboardReadinessTest extends TestCase {
 		$this->assertStringContainsString( 'Connect token', $html );
 		$this->assertStringContainsString( 'Verify sender', $html );
 		$this->assertStringContainsString( 'Check domain DNS', $html );
-		$this->assertStringContainsString( 'SPF: Missing', $html );
+		$this->assertStringContainsString( 'DKIM', $html );
 		$this->assertStringContainsString( '#atum-settings-dns', $html );
 		$this->assertStringContainsString( 'View DNS Health', $html );
 		$this->assertStringContainsString( 'Open Token Settings', $html );
@@ -62,14 +62,9 @@ final class AdminDashboardReadinessTest extends TestCase {
 			'atum_mailer_dns_records_lookup',
 			static function ( $records, $host, $type ) {
 				unset( $records );
-				if ( 'TXT' === $type && 'example.com' === $host ) {
-					return array(
-						array( 'txt' => 'v=spf1 include:spf.mtasv.net ~all' ),
-					);
-				}
 				if ( 'TXT' === $type && 'pm._domainkey.example.com' === $host ) {
 					return array(
-						array( 'txt' => 'v=DKIM1; k=rsa; p=abc123' ),
+						array( 'txt' => 'k=rsa; p=abc123' ),
 					);
 				}
 				if ( 'TXT' === $type && '_dmarc.example.com' === $host ) {
@@ -106,6 +101,6 @@ final class AdminDashboardReadinessTest extends TestCase {
 		$this->assertStringContainsString( 'Production-ready.', $html );
 		$this->assertStringContainsString( 'Ready', $html );
 		$this->assertStringContainsString( 'Done', $html );
-		$this->assertStringContainsString( 'SPF: Found', $html );
+		$this->assertStringContainsString( 'DKIM', $html );
 	}
 }

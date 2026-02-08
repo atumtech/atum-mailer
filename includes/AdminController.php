@@ -299,6 +299,15 @@ class Atum_Mailer_Admin_Controller {
 		}
 
 		$headers = array( 'Content-Type: text/html; charset=UTF-8', 'X-Atum-Mailer-Test: 1' );
+
+		$from_email = sanitize_email( (string) ( $options['from_email'] ?? '' ) );
+		$from_name  = sanitize_text_field( (string) ( $options['from_name'] ?? '' ) );
+		if ( '' !== $from_email ) {
+			$headers[] = '' !== $from_name
+				? sprintf( 'From: %s <%s>', $from_name, $from_email )
+				: sprintf( 'From: %s', $from_email );
+		}
+
 		$sent    = wp_mail( $to, $subject, $message, $headers );
 
 		if ( $sent ) {
@@ -1054,6 +1063,7 @@ class Atum_Mailer_Admin_Controller {
 							</div>
 							<span class="atum-dashboard-readiness__fraction"><?php echo esc_html( (int) $readiness['required_done'] . '/' . (int) $readiness['required_total'] ); ?></span>
 						</div>
+						<p class="atum-dashboard-readiness__summary-text"><?php echo esc_html( $readiness['summary'] ); ?></p>
 					</div>
 					<div class="atum-dashboard-readiness__summary-right">
 						<span class="atum-readiness-pill <?php echo esc_attr( $readiness['badge_class'] ); ?>"><?php echo esc_html( $readiness['badge_label'] ); ?></span>
@@ -1377,30 +1387,15 @@ class Atum_Mailer_Admin_Controller {
 					'done'             => false,
 					'description'      => __( 'Unable to determine the current site domain for DNS checks.', 'atum-mailer' ),
 					'domain'           => '',
-					'spf_pass'         => false,
 					'dkim_pass'        => false,
 					'dmarc_pass'       => false,
 					'return_path_pass' => false,
 				);
 			}
 
-			$spf_pass        = false;
 			$dkim_pass       = false;
 			$dmarc_pass      = false;
 			$return_path_pass = false;
-
-			$root_txt_records = $this->lookup_dns_records( $domain, 'TXT' );
-			foreach ( $root_txt_records as $record ) {
-				$value = $this->normalize_dns_txt_record( $record );
-				if ( '' === $value ) {
-					continue;
-				}
-
-				if ( 0 === strpos( $value, 'v=spf1' ) && false !== strpos( $value, 'include:spf.mtasv.net' ) ) {
-					$spf_pass = true;
-					break;
-				}
-			}
 
 			$dkim_records = $this->lookup_dns_records( 'pm._domainkey.' . $domain, 'TXT' );
 			foreach ( $dkim_records as $record ) {
@@ -1409,7 +1404,7 @@ class Atum_Mailer_Admin_Controller {
 					continue;
 				}
 
-				if ( false !== strpos( $value, 'v=dkim1' ) && false !== strpos( $value, 'p=' ) ) {
+				if ( false !== strpos( $value, 'k=rsa' ) && false !== strpos( $value, 'p=' ) ) {
 					$dkim_pass = true;
 					break;
 				}
@@ -1436,20 +1431,18 @@ class Atum_Mailer_Admin_Controller {
 			$status_found   = __( 'Found', 'atum-mailer' );
 			$status_missing = __( 'Missing', 'atum-mailer' );
 			$description    = sprintf(
-				/* translators: 1: domain, 2: SPF status, 3: DKIM status, 4: DMARC status, 5: return-path status */
-				__( 'Domain %1$s checks: SPF: %2$s, DKIM (pm._domainkey): %3$s, DMARC: %4$s, Return-Path (pm-bounces): %5$s.', 'atum-mailer' ),
+				/* translators: 1: domain, 2: DKIM status, 3: Return-Path status, 4: DMARC status */
+				__( 'Domain %1$s checks: DKIM (pm._domainkey): %2$s, Return-Path (pm-bounces): %3$s, DMARC: %4$s.', 'atum-mailer' ),
 				$domain,
-				$spf_pass ? $status_found : $status_missing,
 				$dkim_pass ? $status_found : $status_missing,
-				$dmarc_pass ? $status_found : $status_missing,
-				$return_path_pass ? $status_found : $status_missing
+				$return_path_pass ? $status_found : $status_missing,
+				$dmarc_pass ? $status_found : $status_missing
 			);
 
 			return array(
-				'done'             => $spf_pass && $dkim_pass,
+				'done'             => $dkim_pass && $return_path_pass,
 				'description'      => $description,
 				'domain'           => $domain,
-				'spf_pass'         => $spf_pass,
 				'dkim_pass'        => $dkim_pass,
 				'dmarc_pass'       => $dmarc_pass,
 				'return_path_pass' => $return_path_pass,
@@ -1976,7 +1969,7 @@ class Atum_Mailer_Admin_Controller {
 						</details>
 
 						<details class="atum-log-drawer__section">
-							<summary class="atum-log-drawer__section-title"><?php esc_html_e( 'Replay / Resend', 'atum-mailer' ); ?></summary>
+							<summary class="atum-log-drawer__section-title"><?php esc_html_e( 'Resend With Overrides', 'atum-mailer' ); ?></summary>
 							<div class="atum-log-resend-panel">
 								<p><?php esc_html_e( 'Override recipient(s), subject, or delivery mode before resending.', 'atum-mailer' ); ?></p>
 								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="atum-log-resend-form">
@@ -2168,12 +2161,16 @@ class Atum_Mailer_Admin_Controller {
 									__( 'Core Setup', 'atum-mailer' ),
 									__( 'Complete these first for reliable transactional delivery.', 'atum-mailer' ),
 									$core_fields,
-									'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>'
+									'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+									true
 								);
 								?>
 							</section>
 							<section id="atum-settings-dns" class="atum-settings-zone">
 								<?php $this->render_dns_health_section(); ?>
+							</section>
+							<section id="atum-settings-conflicts" class="atum-settings-zone">
+								<?php $this->render_mail_conflicts_section(); ?>
 							</section>
 							<section id="atum-settings-delivery" class="atum-settings-zone">
 								<?php
@@ -2185,12 +2182,43 @@ class Atum_Mailer_Admin_Controller {
 								);
 								?>
 							</section>
+							<section id="atum-settings-security" class="atum-settings-zone">
+								<?php
+								$this->render_settings_card(
+									__( 'Security & Privacy', 'atum-mailer' ),
+									__( 'Control sensitive value visibility and data stored in logs.', 'atum-mailer' ),
+									$advanced_security_fields,
+									'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
+								);
+								?>
+							</section>
+							<section id="atum-settings-queue" class="atum-settings-zone">
+								<?php
+								$this->render_settings_card(
+									__( 'Queue Tuning', 'atum-mailer' ),
+									__( 'Adjust retry policy for transient provider outages.', 'atum-mailer' ),
+									$advanced_queue_fields,
+									'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>'
+								);
+								?>
+							</section>
+							<section id="atum-settings-retention" class="atum-settings-zone">
+								<?php
+								$this->render_settings_card(
+									__( 'Retention & Webhooks', 'atum-mailer' ),
+									__( 'Set data retention and webhook integration details.', 'atum-mailer' ),
+									$advanced_retention_fields,
+									'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
+								);
+								?>
+							</section>
 						</div>
 						<div class="atum-settings-two-col__side">
 							<nav class="atum-settings-sidebar-nav" aria-label="<?php esc_attr_e( 'Settings sections', 'atum-mailer' ); ?>">
 								<strong><?php esc_html_e( 'Jump to', 'atum-mailer' ); ?></strong>
 								<a href="#atum-settings-core"><?php esc_html_e( 'Core Setup', 'atum-mailer' ); ?></a>
 								<a href="#atum-settings-dns"><?php esc_html_e( 'Domain DNS', 'atum-mailer' ); ?></a>
+								<a href="#atum-settings-conflicts"><?php esc_html_e( 'Mail Conflicts', 'atum-mailer' ); ?></a>
 								<a href="#atum-settings-delivery"><?php esc_html_e( 'Delivery Behavior', 'atum-mailer' ); ?></a>
 								<a href="#atum-settings-security"><?php esc_html_e( 'Security & Privacy', 'atum-mailer' ); ?></a>
 								<a href="#atum-settings-queue"><?php esc_html_e( 'Queue Tuning', 'atum-mailer' ); ?></a>
@@ -2201,36 +2229,6 @@ class Atum_Mailer_Admin_Controller {
 							</div>
 						</div>
 					</div>
-					<section id="atum-settings-security" class="atum-settings-zone">
-						<?php
-						$this->render_settings_card(
-							__( 'Security & Privacy', 'atum-mailer' ),
-							__( 'Control sensitive value visibility and data stored in logs.', 'atum-mailer' ),
-							$advanced_security_fields,
-							'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
-						);
-						?>
-					</section>
-					<section id="atum-settings-queue" class="atum-settings-zone">
-						<?php
-						$this->render_settings_card(
-							__( 'Queue Tuning', 'atum-mailer' ),
-							__( 'Adjust retry policy for transient provider outages.', 'atum-mailer' ),
-							$advanced_queue_fields,
-							'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>'
-						);
-						?>
-					</section>
-					<section id="atum-settings-retention" class="atum-settings-zone">
-						<?php
-						$this->render_settings_card(
-							__( 'Retention & Webhooks', 'atum-mailer' ),
-							__( 'Set data retention and webhook integration details.', 'atum-mailer' ),
-							$advanced_retention_fields,
-							'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
-						);
-						?>
-					</section>
 				</div>
 				<div class="atum-settings-shell__footer">
 					<?php submit_button( __( 'Save Settings', 'atum-mailer' ), 'primary', 'submit', false ); ?>
@@ -2248,11 +2246,11 @@ class Atum_Mailer_Admin_Controller {
 	 * @param array<int, array<string, string>> $fields Field rows.
 	 * @return void
 	 */
-	private function render_settings_card( $title, $description, $fields, $icon_svg = '' ) {
+	private function render_settings_card( $title, $description, $fields, $icon_svg = '', $open_by_default = false ) {
 		$heading_id = 'atum-settings-card-' . substr( md5( $title ), 0, 8 );
 		?>
-		<section class="atum-settings-card" aria-labelledby="<?php echo esc_attr( $heading_id ); ?>">
-			<header class="atum-settings-card__header">
+		<details class="atum-settings-card" <?php echo $open_by_default ? 'open' : ''; ?>>
+			<summary class="atum-settings-card__header" role="button" aria-controls="<?php echo esc_attr( $heading_id ); ?>-body">
 				<?php if ( '' !== $icon_svg ) : ?>
 					<div class="atum-settings-card__header-icon" aria-hidden="true"><?php echo $icon_svg; ?></div>
 				<?php endif; ?>
@@ -2260,8 +2258,11 @@ class Atum_Mailer_Admin_Controller {
 					<h3 id="<?php echo esc_attr( $heading_id ); ?>"><?php echo esc_html( $title ); ?></h3>
 					<p><?php echo esc_html( $description ); ?></p>
 				</div>
-			</header>
-			<div class="atum-settings-card__body">
+				<span class="atum-settings-card__chevron" aria-hidden="true">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+				</span>
+			</summary>
+			<div class="atum-settings-card__body" id="<?php echo esc_attr( $heading_id ); ?>-body">
 				<?php foreach ( $fields as $field ) : ?>
 					<?php
 					$label    = (string) ( $field['label'] ?? '' );
@@ -2271,7 +2272,7 @@ class Atum_Mailer_Admin_Controller {
 					?>
 				<?php endforeach; ?>
 			</div>
-		</section>
+		</details>
 		<?php
 	}
 
@@ -2283,25 +2284,11 @@ class Atum_Mailer_Admin_Controller {
 		$domain = esc_html( (string) $dns['domain'] );
 		$checks = array(
 			array(
-				'label'  => __( 'SPF', 'atum-mailer' ),
-				'host'   => $domain,
-				'type'   => 'TXT',
-				'expect' => 'v=spf1 include:spf.mtasv.net',
-				'pass'   => ! empty( $dns['spf_pass'] ),
-			),
-			array(
 				'label'  => __( 'DKIM', 'atum-mailer' ),
 				'host'   => 'pm._domainkey.' . $domain,
 				'type'   => 'TXT',
-				'expect' => 'v=DKIM1; k=rsa; p=…',
+				'expect' => 'k=rsa; p=…',
 				'pass'   => ! empty( $dns['dkim_pass'] ),
-			),
-			array(
-				'label'  => __( 'DMARC', 'atum-mailer' ),
-				'host'   => '_dmarc.' . $domain,
-				'type'   => 'TXT',
-				'expect' => 'v=DMARC1; p=…',
-				'pass'   => ! empty( $dns['dmarc_pass'] ),
 			),
 			array(
 				'label'  => __( 'Return-Path', 'atum-mailer' ),
@@ -2309,6 +2296,13 @@ class Atum_Mailer_Admin_Controller {
 				'type'   => 'CNAME',
 				'expect' => 'pm.mtasv.net',
 				'pass'   => ! empty( $dns['return_path_pass'] ),
+			),
+			array(
+				'label'  => __( 'DMARC', 'atum-mailer' ),
+				'host'   => '_dmarc.' . $domain,
+				'type'   => 'TXT',
+				'expect' => 'v=DMARC1; p=…',
+				'pass'   => ! empty( $dns['dmarc_pass'] ),
 			),
 		);
 		$pass_count = count( array_filter( array_column( $checks, 'pass' ) ) );
@@ -2366,6 +2360,225 @@ class Atum_Mailer_Admin_Controller {
 			<?php endif; ?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Known option keys left behind by popular mail plugins.
+	 *
+	 * @return array<string, string> Option key => plugin label.
+	 */
+	private function known_mail_plugin_options() {
+		return array(
+			'wp_mail_smtp'                    => 'WP Mail SMTP',
+			'wp_mail_smtp_mail_key'           => 'WP Mail SMTP',
+			'wp_mail_smtp_pro'                => 'WP Mail SMTP Pro',
+			'wp_mail_smtp_lite'               => 'WP Mail SMTP Lite',
+			'wp_mail_smtp_debug'              => 'WP Mail SMTP',
+			'wp_mail_smtp_review_notice'      => 'WP Mail SMTP',
+			'wp_mail_smtp_activated_time'     => 'WP Mail SMTP',
+			'wp_mail_smtp_initial_version'    => 'WP Mail SMTP',
+			'swpsmtp_options'                 => 'Easy WP SMTP',
+			'smtp_mailer_options'             => 'SMTP Mailer',
+			'postman_state'                   => 'Post SMTP',
+			'postman_options'                 => 'Post SMTP',
+			'postman_session'                 => 'Post SMTP',
+			'postman_auth_token'              => 'Post SMTP',
+			'postman_release_version'         => 'Post SMTP',
+			'postman_db_version'              => 'Post SMTP',
+			'mailgun'                         => 'Mailgun',
+			'mailgun-api-key'                 => 'Mailgun',
+			'mailgun-region'                  => 'Mailgun',
+			'sparkpost_settings'              => 'SparkPost',
+			'sendgrid_settings'               => 'SendGrid',
+			'sendgrid_api_key'                => 'SendGrid',
+			'brevo_settings'                  => 'Brevo (Sendinblue)',
+			'sib_home_option'                 => 'Brevo (Sendinblue)',
+			'fluent_mail_config'              => 'FluentSMTP',
+			'fluentmail_db_version'           => 'FluentSMTP',
+			'fluentmail_is_installed'         => 'FluentSMTP',
+			'pepipost_settings'               => 'Pepipost',
+			'turbosmtp_settings'              => 'turboSMTP',
+		);
+	}
+
+	/**
+	 * Build a diagnostic report of conflicting mail plugin remnants.
+	 *
+	 * @return array{found_options: array<string, string>, filter_hooks: array<int, array{hook: string, callback: string, priority: int}>}
+	 */
+	private function build_mail_conflicts_check() {
+		$known         = $this->known_mail_plugin_options();
+		$found_options = array();
+
+		foreach ( $known as $key => $plugin_label ) {
+			$value = get_option( $key, null );
+			if ( null !== $value && false !== $value ) {
+				$found_options[ $key ] = $plugin_label;
+			}
+		}
+
+		$filter_hooks = array();
+		$hooks_to_check = array( 'wp_mail_from', 'wp_mail_from_name', 'wp_mail_content_type', 'pre_wp_mail' );
+
+		foreach ( $hooks_to_check as $hook_name ) {
+			global $wp_filter;
+			if ( empty( $wp_filter[ $hook_name ] ) ) {
+				continue;
+			}
+			$filter_obj = $wp_filter[ $hook_name ];
+			$callbacks  = is_object( $filter_obj ) && isset( $filter_obj->callbacks ) ? $filter_obj->callbacks : array();
+			foreach ( $callbacks as $priority => $group ) {
+				foreach ( $group as $id => $entry ) {
+					$cb = $entry['function'] ?? null;
+					if ( null === $cb ) {
+						continue;
+					}
+
+					$label = '';
+					if ( is_string( $cb ) ) {
+						$label = $cb;
+					} elseif ( is_array( $cb ) && count( $cb ) === 2 ) {
+						$class  = is_object( $cb[0] ) ? get_class( $cb[0] ) : (string) $cb[0];
+						$method = (string) $cb[1];
+						$label  = $class . '::' . $method;
+					} elseif ( $cb instanceof Closure ) {
+						$label = '{closure}';
+					}
+
+					// Skip our own hooks.
+					if ( false !== strpos( $label, 'Atum_Mailer' ) ) {
+						continue;
+					}
+
+					$filter_hooks[] = array(
+						'hook'     => $hook_name,
+						'callback' => $label,
+						'priority' => (int) $priority,
+					);
+				}
+			}
+		}
+
+		return array(
+			'found_options' => $found_options,
+			'filter_hooks'  => $filter_hooks,
+		);
+	}
+
+	/**
+	 * Render the mail conflicts diagnostic section.
+	 *
+	 * @return void
+	 */
+	private function render_mail_conflicts_section() {
+		$conflicts = $this->build_mail_conflicts_check();
+		$options   = $conflicts['found_options'];
+		$hooks     = $conflicts['filter_hooks'];
+		$has_options = ! empty( $options );
+		$has_hooks   = ! empty( $hooks );
+		$clean       = ! $has_options && ! $has_hooks;
+
+		$grouped = array();
+		foreach ( $options as $key => $plugin ) {
+			$grouped[ $plugin ][] = $key;
+		}
+		?>
+		<div class="atum-mail-conflicts" role="region" aria-label="<?php esc_attr_e( 'Mail Plugin Conflicts', 'atum-mailer' ); ?>">
+			<div class="atum-mail-conflicts__header">
+				<div class="atum-mail-conflicts__title-row">
+					<h3><?php esc_html_e( 'Mail Plugin Conflicts', 'atum-mailer' ); ?></h3>
+					<span class="atum-pill <?php echo $clean ? 'is-good' : 'is-warn'; ?>">
+						<?php echo $clean ? esc_html__( 'Clean', 'atum-mailer' ) : esc_html__( 'Conflicts Found', 'atum-mailer' ); ?>
+					</span>
+				</div>
+				<p><?php esc_html_e( 'Detects leftover settings from other mail plugins that may override sender identity or intercept wp_mail().', 'atum-mailer' ); ?></p>
+			</div>
+
+			<?php if ( $has_options ) : ?>
+				<div class="atum-mail-conflicts__body">
+					<div class="atum-mail-conflicts__group-label"><?php esc_html_e( 'Orphaned plugin options in database', 'atum-mailer' ); ?></div>
+					<ul class="atum-mail-conflicts__list">
+						<?php foreach ( $grouped as $plugin => $keys ) : ?>
+							<li class="atum-mail-conflicts__item">
+								<div class="atum-mail-conflicts__item-info">
+									<strong><?php echo esc_html( $plugin ); ?></strong>
+									<code><?php echo esc_html( implode( ', ', $keys ) ); ?></code>
+								</div>
+								<span class="atum-dns-health__badge is-fail"><?php echo esc_html( sprintf( _n( '%d option', '%d options', count( $keys ), 'atum-mailer' ), count( $keys ) ) ); ?></span>
+							</li>
+						<?php endforeach; ?>
+					</ul>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( $has_hooks ) : ?>
+				<div class="atum-mail-conflicts__body">
+					<div class="atum-mail-conflicts__group-label"><?php esc_html_e( 'Active filter hooks from other code', 'atum-mailer' ); ?></div>
+					<ul class="atum-mail-conflicts__list">
+						<?php foreach ( $hooks as $hook ) : ?>
+							<li class="atum-mail-conflicts__item">
+								<div class="atum-mail-conflicts__item-info">
+									<strong><?php echo esc_html( $hook['hook'] ); ?></strong>
+									<code><?php echo esc_html( $hook['callback'] ); ?></code>
+								</div>
+								<span class="atum-dns-health__badge is-fail"><?php esc_html_e( 'Active', 'atum-mailer' ); ?></span>
+							</li>
+						<?php endforeach; ?>
+					</ul>
+					<div class="atum-mail-conflicts__help">
+						<p><?php esc_html_e( 'Active filter hooks cannot be removed from here. Deactivate or uninstall the responsible plugin to clear these.', 'atum-mailer' ); ?></p>
+					</div>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( $clean ) : ?>
+				<div class="atum-mail-conflicts__body">
+					<p class="atum-mail-conflicts__clean"><?php esc_html_e( 'No conflicting mail plugin options or filter hooks detected. You\'re good.', 'atum-mailer' ); ?></p>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( $has_options ) : ?>
+				<div class="atum-mail-conflicts__footer">
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-atum-danger-form="1" data-danger-title="<?php esc_attr_e( 'Purge Mail Plugin Options?', 'atum-mailer' ); ?>" data-danger-message="<?php echo esc_attr( sprintf( __( 'This will delete %d orphaned option(s) from the database left by other mail plugins. This cannot be undone.', 'atum-mailer' ), count( $options ) ) ); ?>" data-danger-confirm="<?php esc_attr_e( 'Purge Options', 'atum-mailer' ); ?>">
+						<?php wp_nonce_field( 'atum_mailer_purge_mail_conflicts' ); ?>
+						<input type="hidden" name="action" value="atum_mailer_purge_mail_conflicts" />
+						<button type="submit" class="button button-secondary atum-button-danger">
+							<?php echo esc_html( sprintf( __( 'Purge %d Orphaned Option(s)', 'atum-mailer' ), count( $options ) ) ); ?>
+						</button>
+					</form>
+				</div>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Handle purge mail conflicts action.
+	 *
+	 * @return void
+	 */
+	public function handle_purge_mail_conflicts() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to do this.', 'atum-mailer' ) );
+		}
+
+		check_admin_referer( 'atum_mailer_purge_mail_conflicts' );
+
+		$known   = $this->known_mail_plugin_options();
+		$deleted = 0;
+
+		foreach ( $known as $key => $plugin_label ) {
+			if ( false !== get_option( $key, null ) && null !== get_option( $key, null ) ) {
+				delete_option( $key );
+				$deleted++;
+			}
+		}
+
+		$this->redirect_with_notice(
+			'settings',
+			$deleted > 0 ? 'success' : 'info',
+			sprintf( __( 'Purged %d orphaned mail plugin option(s).', 'atum-mailer' ), $deleted )
+		);
 	}
 
 	/**

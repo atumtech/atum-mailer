@@ -1,6 +1,6 @@
 {
   "name": "atum-mailer",
-  "version": "0.5.3",
+  "version": "0.5.5",
   "private": true,
   "description": "WordPress plugin – Replaces default mail delivery with Postmark for transactional email.",
   "scripts": {

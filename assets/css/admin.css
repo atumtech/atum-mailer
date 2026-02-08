@@ -221,8 +221,10 @@
 .atum-dashboard-readiness__summary:hover { background: var(--atum-surface-sunken); }
 .atum-dashboard-readiness__summary-left {
   display: flex; align-items: center; gap: 16px; min-width: 0; flex: 1;
+  flex-wrap: wrap;
 }
 .atum-dashboard-readiness__summary-left h2 { margin: 0; font-size: 15px; color: var(--atum-text); white-space: nowrap; }
+.atum-dashboard-readiness__summary-text { margin: 0; font-size: 12px; color: var(--atum-text-muted); width: 100%; }
 .atum-dashboard-readiness__inline-progress {
   display: flex; align-items: center; gap: 8px; flex: 1; max-width: 200px;
 }
@@ -355,24 +357,25 @@
 
 /* Settings 2-column layout */
 .atum-settings-two-col {
-  display: grid; grid-template-columns: 1fr 210px; gap: 24px; align-items: start;
+  display: grid; grid-template-columns: 1fr 200px; gap: 24px; align-items: start;
 }
 .atum-settings-two-col__main { display: grid; gap: 20px; }
-.atum-settings-two-col__side { position: sticky; top: 46px; }
+.atum-settings-two-col__side { position: sticky; top: 46px; align-self: start; }
 .atum-settings-sidebar-nav {
-  display: grid; gap: 2px; padding: 10px;
+  display: flex; flex-direction: column; gap: 2px; padding: 12px;
   border: 1px solid var(--atum-border); border-radius: var(--atum-radius-lg);
   background: var(--atum-surface);
   box-shadow: var(--atum-shadow-sm);
 }
 .atum-settings-sidebar-nav strong {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--atum-text-muted); margin-bottom: 2px; padding: 6px 10px 4px;
+  color: var(--atum-text-muted); margin-bottom: 4px; padding: 6px 10px 4px;
 }
 .atum-settings-sidebar-nav a {
-  display: block; padding: 8px 12px; border-radius: var(--atum-radius-sm);
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: var(--atum-radius-sm);
   color: var(--atum-text-secondary); text-decoration: none;
-  font-size: 12px; font-weight: 500;
+  font-size: 12px; font-weight: 500; white-space: nowrap;
   transition: all var(--atum-transition);
   border: 1px solid transparent;
 }
@@ -394,10 +397,20 @@
   transition: box-shadow var(--atum-transition);
 }
 .atum-settings-card:hover { box-shadow: var(--atum-shadow-md); }
+/* Collapsible <details> resets */
+.atum-settings-card > summary { list-style: none; cursor: pointer; }
+.atum-settings-card > summary::-webkit-details-marker { display: none; }
 .atum-settings-card__header {
   display: flex; align-items: flex-start; gap: 12px;
-  padding: 16px 20px; border-bottom: 1px solid var(--atum-border);
+  padding: 16px 20px; border-bottom: 1px solid transparent;
   background: linear-gradient(to bottom, var(--atum-surface-raised), var(--atum-surface-sunken));
+  transition: background var(--atum-transition), border-color var(--atum-transition);
+}
+.atum-settings-card[open] > .atum-settings-card__header {
+  border-bottom-color: var(--atum-border);
+}
+.atum-settings-card__header:hover {
+  background: linear-gradient(to bottom, var(--atum-surface-sunken), var(--atum-surface-sunken));
 }
 .atum-settings-card__header-icon {
   display: flex; align-items: center; justify-content: center;
@@ -406,9 +419,22 @@
   background: var(--atum-accent-light);
   color: var(--atum-accent);
 }
-.atum-settings-card__header-text { min-width: 0; }
+.atum-settings-card__header-text { min-width: 0; flex: 1; }
 .atum-settings-card__header h3 { margin: 0 0 2px; color: var(--atum-text); font-size: 14px; font-weight: 700; }
 .atum-settings-card__header p { margin: 0; color: var(--atum-text-muted); font-size: 12px; line-height: 1.4; }
+.atum-settings-card__chevron {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex: 0 0 28px;
+  border-radius: var(--atum-radius-sm);
+  color: var(--atum-text-muted);
+  transition: transform 200ms ease, color var(--atum-transition), background var(--atum-transition);
+}
+.atum-settings-card__header:hover .atum-settings-card__chevron {
+  color: var(--atum-accent); background: var(--atum-accent-light);
+}
+.atum-settings-card[open] > .atum-settings-card__header .atum-settings-card__chevron {
+  transform: rotate(180deg);
+}
 .atum-settings-card__body { display: grid; gap: 0; padding: 0; }
 
 /* Settings rows */
@@ -500,20 +526,25 @@
 .atum-settings-shell__footer .button-primary { min-width: 160px; }
 
 /* ─── DNS Health ─── */
-.atum-dns-health {
+.atum-dns-health,
+.atum-mail-conflicts {
   border: 1px solid var(--atum-border); border-radius: var(--atum-radius-lg);
   background: var(--atum-surface-raised); box-shadow: var(--atum-shadow-sm); overflow: hidden;
 }
-.atum-dns-health__header {
+.atum-dns-health__header,
+.atum-mail-conflicts__header {
   padding: 14px 16px; border-bottom: 1px solid var(--atum-border);
   background: var(--atum-surface-sunken);
 }
-.atum-dns-health__title-row {
+.atum-dns-health__title-row,
+.atum-mail-conflicts__title-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin-bottom: 2px;
 }
-.atum-dns-health__header h3 { margin: 0; color: var(--atum-text); font-size: 13px; font-weight: 700; }
-.atum-dns-health__header p { margin: 0; color: var(--atum-text-muted); font-size: 11px; }
+.atum-dns-health__header h3,
+.atum-mail-conflicts__header h3 { margin: 0; color: var(--atum-text); font-size: 13px; font-weight: 700; }
+.atum-dns-health__header p,
+.atum-mail-conflicts__header p { margin: 0; color: var(--atum-text-muted); font-size: 11px; }
 .atum-dns-health__header code {
   font-size: 11px; font-weight: 600; color: var(--atum-accent);
   background: var(--atum-accent-light); padding: 1px 5px; border-radius: 4px;
@@ -563,6 +594,39 @@
   background: var(--atum-warning-bg);
 }
 .atum-dns-health__help p { margin: 0; color: var(--atum-warning); font-size: 11px; font-weight: 600; }
+
+/* ─── Mail Conflicts ─── */
+.atum-mail-conflicts__body { padding: 12px 16px; }
+.atum-mail-conflicts__body + .atum-mail-conflicts__body { border-top: 1px solid var(--atum-border); }
+.atum-mail-conflicts__group-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--atum-text-muted); margin-bottom: 8px;
+}
+.atum-mail-conflicts__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.atum-mail-conflicts__item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 12px; border-radius: var(--atum-radius-sm);
+  border: 1px solid var(--atum-border); background: var(--atum-surface-sunken);
+}
+.atum-mail-conflicts__item-info { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.atum-mail-conflicts__item-info strong { color: var(--atum-text); font-size: 12px; white-space: nowrap; }
+.atum-mail-conflicts__item-info code {
+  font-size: 10px; color: var(--atum-text-muted);
+  background: var(--atum-surface-raised); padding: 2px 6px; border-radius: 4px;
+  border: 1px solid var(--atum-border); word-break: break-all;
+}
+.atum-mail-conflicts__clean {
+  margin: 0; color: var(--atum-success); font-size: 12px; font-weight: 600;
+}
+.atum-mail-conflicts__help {
+  margin-top: 8px; padding: 8px 12px; border-radius: var(--atum-radius-sm);
+  background: var(--atum-info-bg);
+}
+.atum-mail-conflicts__help p { margin: 0; color: var(--atum-text-secondary); font-size: 11px; }
+.atum-mail-conflicts__footer {
+  padding: 12px 16px; border-top: 1px solid var(--atum-border);
+  background: var(--atum-surface-sunken);
+}
 
 /* ─── Forms & Inputs ─── */
 .atum-send-test-context {
@@ -659,12 +723,38 @@
 .atum-button-danger { border-color: rgba(220, 38, 38, 0.3) !important; color: var(--atum-danger) !important; }
 
 /* From Builder */
-.atum-from-builder { display: grid; gap: 8px; }
-.atum-from-builder__quick { display: flex; flex-wrap: wrap; gap: 6px; }
-.atum-from-builder__quick .button { border-radius: var(--atum-radius-full); }
-.atum-from-builder__compose { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.atum-from-builder__compose input[type="text"] { width: 200px; }
-.atum-from-builder__compose span { color: var(--atum-text-muted); font-weight: 600; }
+.atum-from-builder { display: grid; gap: 10px; }
+.atum-from-builder__quick {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.atum-from-builder__quick .button {
+  border-radius: var(--atum-radius-full);
+  font-size: 12px; padding: 4px 12px; min-height: 30px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.atum-from-builder__compose {
+  display: flex; align-items: center; gap: 0; flex-wrap: nowrap;
+  border: 1px solid var(--atum-border-strong); border-radius: var(--atum-radius-sm);
+  background: #fff; overflow: hidden; max-width: 400px;
+}
+.atum-from-builder__compose input[type="text"] {
+  flex: 1 1 120px; min-width: 80px;
+  border: 0; border-radius: 0; box-shadow: none;
+  padding: 8px 10px; font-size: 13px; min-height: 36px;
+}
+.atum-from-builder__compose input[type="text"]:focus {
+  outline: none; box-shadow: none; border: 0;
+}
+.atum-from-builder__compose span {
+  color: var(--atum-text-muted); font-weight: 600; font-size: 13px;
+  white-space: nowrap; padding: 0 2px 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.atum-from-builder__compose .button {
+  border: 0; border-left: 1px solid var(--atum-border);
+  border-radius: 0; min-height: 36px; padding: 0 14px;
+  font-size: 12px; font-weight: 600;
+}
 
 /* ─── Buttons ─── */
 .atum-mailer-admin .button,
@@ -1029,7 +1119,7 @@ body.atum-drawer-open { overflow: hidden; }
 /* ─── Responsive ─── */
 @media (max-width: 1360px) {
   .atum-dashboard-kpis { grid-template-columns: repeat(3, 1fr); }
-  .atum-settings-two-col { grid-template-columns: 1fr 180px; }
+  .atum-settings-two-col { grid-template-columns: 1fr 170px; }
   .atum-logs-filter__field,
   .atum-logs-filter__field--wide,
   .atum-logs-filter__field--search { grid-column: span 3; }
@@ -1087,7 +1177,7 @@ body.atum-drawer-open { overflow: hidden; }
   .atum-logs-bulk-controls {
     flex-wrap: wrap;
   }
-  .atum-from-builder__compose input[type="text"] { width: 100%; }
+  .atum-from-builder__compose { max-width: 100%; }
   .atum-api-form input[type="password"], .atum-api-token { min-width: 0; width: 100%; }
   .atum-log-actions__text { white-space: normal; }
   .atum-logs-selected-count { margin-left: 0; }

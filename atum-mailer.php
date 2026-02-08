@@ -3,7 +3,7 @@
  * Plugin Name:       atum.mailer
  * Plugin URI:        https://atum.tech
  * Description:       Replaces default WordPress mail delivery with Postmark for transactional email.
- * Version:           0.5.3
+ * Version:           0.5.5
  * Requires at least: 6.5
  * Requires PHP:      8.1
  * Update URI:        https://github.com/atum/atum-mailer
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'ATUM_MAILER_VERSION', '0.5.3' );
+define( 'ATUM_MAILER_VERSION', '0.5.5' );
 define( 'ATUM_MAILER_FILE', __FILE__ );
 define( 'ATUM_MAILER_DIR', plugin_dir_path( __FILE__ ) );
 define( 'ATUM_MAILER_URL', plugin_dir_url( __FILE__ ) );

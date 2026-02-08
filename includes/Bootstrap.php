@@ -101,6 +101,7 @@ class Atum_Mailer_Bootstrap {
 		add_action( 'admin_post_atum_mailer_resend_log', array( $this->admin, 'handle_resend_log' ) );
 		add_action( 'admin_post_atum_mailer_connect_token', array( $this->admin, 'handle_connect_token' ) );
 		add_action( 'admin_post_atum_mailer_disconnect_token', array( $this->admin, 'handle_disconnect_token' ) );
+		add_action( 'admin_post_atum_mailer_purge_mail_conflicts', array( $this->admin, 'handle_purge_mail_conflicts' ) );
 		add_action( 'admin_post_update', array( $this->admin, 'handle_misrouted_update_action' ) );
 
 		add_action( 'wp_ajax_atum_mailer_get_log_details', array( $this->admin, 'handle_get_log_details' ) );

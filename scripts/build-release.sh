@@ -26,7 +26,7 @@ rsync -a "${ROOT_DIR}/" "${PACKAGE_DIR}/" \
 
 (
   cd "${DIST_DIR}"
-  zip -rq atum-mailer.zip atum-mailer
+  zip -r atum-mailer.zip atum-mailer
 )
 
 echo "Built ${ZIP_PATH}"

@@ -4,7 +4,7 @@ Tags: email, postmark, mailer, transactional-email
 Requires at least: 6.5
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 0.5.3
+Stable tag: 0.5.5
 License: MIT
 License URI: https://opensource.org/license/mit/
 
